@@ -4,7 +4,8 @@ let currentResult, currentJob, activeRoof, view, originalView, dragging;
 function busy(value) { $('analyze').disabled=value; $('demo-button').disabled=value; $('lookup-addresses').disabled=value; $('replan').disabled=value; }
 function error(message) { $('error').textContent=message; $('error').hidden=false; }
 function planInputs() {
-  return {budget_usd:Number($('budget').value), energy_target_kwh_year:Number($('energy-target').value), installed_cost_per_watt:Number($('cost-per-watt').value)};
+  return {budget_usd:Number($('budget').value), energy_target_kwh_year:Number($('energy-target').value),
+    space_limit_m2:$('space-limit').value.trim() ? Number($('space-limit').value) : null, priority:$('panel-priority').value};
 }
 async function analyze(demo=false) {
   $('error').hidden=true; busy(true);
@@ -39,6 +40,7 @@ function pathFor(geometry) {
 }
 function setView() { $('roof-map').setAttribute('viewBox',view.join(' ')); }
 function selectRoof(id) {
+  $('map-section').open=true;
   activeRoof=id;
   $('roof-results').open=true;
   document.querySelectorAll('details.roof-accordion').forEach(detail=>{if(detail.dataset.roof===id)detail.open=true;});
@@ -103,6 +105,7 @@ function render(result,job,preserveView=false) {
   }
   $('no-roofs').hidden=result.roofs.length>0;
   renderProposal(result.proposal);
+  renderRecommendations(result.panel_recommendations);
   $('findings').textContent=result.report?.findings || 'Update the panel plan to generate a summary for this saved search.';
   $('next-steps').textContent=result.report?.next_steps || 'Verify roof addresses and usable area with a qualified solar installer before proceeding.';
   const a=result.assumptions;
@@ -117,9 +120,10 @@ function renderProposal(proposal) {
   $('panel-count').textContent=proposal ? format(proposal.panel_count) : '—';
   $('plan-cost').textContent=proposal ? '$'+format(proposal.estimated_cost_usd,2) : '—';
   $('plan-energy').textContent=proposal ? format(proposal.estimated_energy_kwh_year) : '—';
-  $('plan-status').textContent=proposal ? proposal.status+(proposal.energy_shortfall_kwh_year>0 ? ` Shortfall: ${format(proposal.energy_shortfall_kwh_year)} kWh/year.` : '') : 'Set your budget and annual energy target, then click Update budget / target to create a plan from this saved analysis.';
+  $('plan-status').textContent=proposal ? proposal.status+(proposal.energy_shortfall_kwh_year>0 ? ` Shortfall: ${format(proposal.energy_shortfall_kwh_year)} kWh/year.` : '') : 'Set your budget and annual energy target, then click Update recommendations to create a plan from this saved analysis.';
   $('plan-status').classList.toggle('target-met',Boolean(proposal?.target_met));
-  $('plan-notes').textContent=proposal ? `${proposal.panel_width_m} × ${proposal.panel_height_m} m panels · ${format(proposal.panel_kw,2)} kW each · assumed $${proposal.installed_cost_per_watt}/W. ${proposal.notes}` : '';
+  $('plan-notes').textContent=proposal ? `${proposal.panel_model ? proposal.panel_model.manufacturer+' '+proposal.panel_model.model_name+' · ' : ''}${proposal.panel_width_m} × ${proposal.panel_height_m} m panels · ${format(proposal.panel_kw,2)} kW each · estimated $${format(proposal.installed_cost_per_watt,3)}/W installed. ${proposal.notes}` : '';
+  if(proposal?.installation_estimate){const estimate=proposal.installation_estimate;const range=proposal.estimated_cost_range_usd;$('plan-notes').textContent+=` Geographic estimate: ${estimate.state || 'unknown state'} · ${estimate.region}, $${format(estimate.installed_cost_per_watt,3)}/W; estimated total range $${format(range[0])}–$${format(range[1])}. ${estimate.notes}`;}
   if(!proposal)return;
   for(const panel of proposal.panels) {
     const outline=document.createElementNS('http://www.w3.org/2000/svg','path');
@@ -136,7 +140,7 @@ function renderPlottedPanelReport(proposal) {
   const groups=new Map();
   for(const panel of proposal.panels){const group=groups.get(panel.roof_id)||{count:0,energy:0};group.count++;group.energy+=panel.estimated_energy_kwh_year;groups.set(panel.roof_id,group);}
   const remaining=Math.max(0,proposal.budget_usd-proposal.estimated_cost_usd);
-  $('plotted-panel-summary').textContent=`The image shows ${format(proposal.panel_count)} proposed ${proposal.panel_width_m} × ${proposal.panel_height_m} m panels across ${groups.size} roof region${groups.size===1?'':'s'}. Together, they are estimated to produce ${format(proposal.estimated_energy_kwh_year)} kWh/year for an assumed installed cost of $${format(proposal.estimated_cost_usd)}, leaving $${format(remaining)} of your budget. ${proposal.target_met?'The estimated annual output meets your target.':`The target remains unmet by ${format(proposal.energy_shortfall_kwh_year)} kWh/year.`}${!proposal.panel_count?' No panels fit the current budget and available roof assumptions.':''}`;
+  $('plotted-panel-summary').textContent=`The image shows ${format(proposal.panel_count)} proposed ${proposal.panel_width_m} × ${proposal.panel_height_m} m panels across ${groups.size} roof region${groups.size===1?'':'s'}. Together, they are estimated to produce ${format(proposal.estimated_energy_kwh_year)} kWh/year for an estimated installed cost of $${format(proposal.estimated_cost_usd)}, leaving $${format(remaining)} of your budget. ${proposal.target_met?'The estimated annual output meets your target.':`The target remains unmet by ${format(proposal.energy_shortfall_kwh_year)} kWh/year.`}${!proposal.panel_count?' No panels fit the current budget and available roof assumptions.':''}`;
   for(const [id,group] of groups){
     const roof=currentResult.roofs.find(roof=>roof.properties.id===id);
     const row=document.createElement('div');row.className='plotted-roof-row';
@@ -144,13 +148,99 @@ function renderPlottedPanelReport(proposal) {
     const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent='View roof';button.addEventListener('click',()=>{selectRoof(id);$('roof-map').scrollIntoView({behavior:'smooth',block:'center'});});row.append(paragraph,button);$('plotted-roofs').append(row);
   }
 }
-async function updatePlan() {
-  if(!currentJob)return;
+function panelName(model){return `${model.manufacturer} ${model.model_name}`;}
+function panelDescription(item) {
+  const model=item.model;
+  const bifacial=String(model.bifacial).toLowerCase()==='true' ? 'bifacial ' : '';
+  return `A ${format(model.rated_power_w)} W ${bifacial}rigid solar module measuring ${format(model.width_m,3)} × ${format(model.height_m,3)} m, with a listed hardware price of $${format(model.price_usd,2)} per panel. Your current layout uses ${format(item.panel_count)} modules for an estimated ${format(item.estimated_energy_kwh_year)} kWh/year.`;
+}
+function panelScenario(item,items) {
+  const m=item.model;
+  if(!item.panel_count)return `Possible use: reconsider this model if your budget or usable roof space increases. One module needs ${format(m.area_m2,2)} m² of panel area plus spacing, and costs about $${format(item.estimated_installed_cost_per_panel_usd,2)} installed under this estimate.`;
+  const scenarios=[];
+  const lowPrice=Math.min(...items.map(r=>r.model.price_per_watt_usd));
+  const highDensity=Math.max(...items.map(r=>r.model.power_density_w_per_m2));
+  if(Math.abs(m.price_per_watt_usd-lowPrice)<1e-8)scenarios.push('you want the lowest listed hardware price per watt in this catalog');
+  if(Math.abs(m.power_density_w_per_m2-highDensity)<1e-8)scenarios.push('your roof space is tight and you want the most rated power per square meter among the compared models');
+  if(m.rated_power_w<=60)scenarios.push('you have narrow usable roof sections or a small energy need and can accommodate the extra module connections');
+  if(m.product_warranty_years)scenarios.push(`you value documented defect coverage (${format(m.product_warranty_years)}-year product warranty${m.performance_warranty_years ? ` and ${format(m.performance_warranty_years)}-year output warranty` : ''})`);
+  if(!scenarios.length)scenarios.push(`the ${format(m.width_m,3)} × ${format(m.height_m,3)} m footprint suits your available roof sections and you want ${format(m.rated_power_w)} W modules`);
+  return `Possible use: ${scenarios.slice(0,2).join('; or ')}.${item.target_met ? '' : ` This layout could offset part of your electricity use, but still leaves ${format(item.energy_shortfall_kwh_year)} kWh/year of your target unmet.`}`;
+}
+function setPanelLink(link,url) {
+  link.hidden=true;link.removeAttribute('href');
+  try{const target=new URL(url);if(['https:','http:'].includes(target.protocol)){link.href=target.href;link.hidden=false;}}catch(e){/* Missing catalog product URL. */}
+}
+function renderRecommendations(data) {
+  $('recommendation-main').replaceChildren();$('recommendation-tiers').replaceChildren();
+  $('recommendation-excluded').textContent=''; $('recommendation-notes').textContent='';
+  $('chosen-panel-link').hidden=true;$('recommendation-others').hidden=!data;
+  if(!data){
+    const model=currentResult?.proposal?.panel_model;
+    $('chosen-panel-name').textContent=model ? panelName(model) : 'Your proposed solar layout';
+    $('chosen-panel-label').textContent='PANEL PLOTTED ON THE MAP';
+    $('chosen-panel-description').textContent='Click Update recommendations to compare the CSV catalog and choose a panel for this saved search.';
+    if(model)setPanelLink($('chosen-panel-link'),model.specifications_source_url || model.price_source_url);
+    $('recommendation-summary').textContent='Click Update recommendations to compare the CSV catalog using this saved search.';return;
+  }
+  $('budget').value=data.budget_usd; $('energy-target').value=data.energy_target_kwh_year;
+  $('space-limit').value=data.space_limit_m2 ?? ''; $('panel-priority').value=data.priority;
+  const best=data.recommendations.find(item=>item.recommended) || data.recommendations[0];
+  const chosen=data.recommendations.find(item=>item.model.model_id===data.selected_model_id) || best;
+  if(chosen){
+    $('chosen-panel-name').textContent=panelName(chosen.model);
+    $('chosen-panel-label').textContent=chosen.recommended ? '#1 SUGGESTION · PANEL PLOTTED ON THE MAP' : `YOUR CHOSEN PANEL · RANK ${chosen.rank}`;
+    $('chosen-panel-description').textContent=panelDescription(chosen);
+    setPanelLink($('chosen-panel-link'),chosen.model.specifications_source_url || chosen.model.price_source_url);
+  }
+  const available=best?.available_roof_area_m2 ?? 0;
+  $('recommendation-summary').textContent=`Comparing ${data.recommendations.length} rigid models using $${format(data.budget_usd)} and ${format(data.energy_target_kwh_year)} kWh/year. Detected usable roof area: ${format(available,1)} m²${data.space_limit_m2 != null ? `; module-area cap: ${format(data.space_limit_m2,1)} m²` : ''}. ${best?.target_met ? 'At least one model meets your target under these assumptions.' : 'No compared model meets your target under the current constraints.'}`;
+  const labels={1:'Tier 1 · Target met',2:'Tier 2 · Partial output',3:'Tier 3 · No current fit'};
+  const others=data.recommendations.filter(item=>item!==best);
+  $('recommendation-others-label').textContent=`View other panel suggestions (${others.length})`;
+  $('recommendation-others').hidden=others.length===0;
+  for(const item of [best,...others].filter(Boolean)){
+    const model=item.model;const selected=model.model_id===data.selected_model_id;
+    const featured=item===best;
+    const card=document.createElement(featured?'article':'details');card.className=featured?'featured-panel':'panel-option roof-accordion';
+    card.classList.toggle('selected',selected);
+    const title=document.createElement(featured?'h3':'summary');
+    const name=document.createElement('span');name.textContent=`${item.rank}. ${panelName(model)}`;
+    const badge=document.createElement('span');badge.className='panel-tier-badge';badge.textContent=`${labels[item.tier]}${selected?' · Plotted on map':''}`;
+    title.append(name,badge);card.append(title);
+    const body=document.createElement('div');body.className='panel-option-body';
+    const description=document.createElement('p');description.textContent=panelDescription(item);
+    const product=document.createElement('a');product.className='text-link';product.textContent='View this solar panel ↗';product.target='_blank';product.rel='noopener noreferrer';setPanelLink(product,model.specifications_source_url || model.price_source_url);
+    const stats=document.createElement('div');stats.className='roof-detail-metrics panel-detail-metrics';
+    for(const [label,value] of [['Module power',`${format(model.rated_power_w)} W`],['Dimensions',`${format(model.width_m,3)} × ${format(model.height_m,3)} m`],['Hardware / panel',`$${format(model.price_usd,2)}`],['Power / area',`${format(model.power_density_w_per_m2,1)} W/m²`],['Panels in layout',format(item.panel_count)],['Module area used',`${format(item.panel_area_used_m2,1)} m²`],['Annual output',`${format(item.estimated_energy_kwh_year)} kWh/year`],['Installed estimate',`$${format(item.estimated_cost_usd,2)}`]]){
+      const metric=document.createElement('div');const labelNode=document.createElement('span');labelNode.textContent=label;const valueNode=document.createElement('strong');valueNode.textContent=value;metric.append(labelNode,valueNode);stats.append(metric);
+    }
+    const scenario=document.createElement('p');scenario.className='panel-scenario';scenario.textContent=panelScenario(item,data.recommendations);
+    const status=document.createElement('p');status.textContent=item.target_met ? 'This layout meets your annual energy target under the current assumptions.' : `Energy shortfall: ${format(item.energy_shortfall_kwh_year)} kWh/year.`;
+    const button=document.createElement('button');button.type='button';button.className='secondary';button.textContent=selected?'Currently plotted':'Use this panel on the map';button.disabled=selected || item.panel_count===0;
+    button.addEventListener('click',async()=>{
+      button.disabled=true;await updatePlan(model.model_id);
+      if(button.isConnected)button.disabled=selected || item.panel_count===0;
+      else{$('map-section').open=true;$('map-section').scrollIntoView({behavior:'smooth',block:'start'});}
+    });
+    const detail=document.createElement('details');detail.className='panel-evidence';const detailTitle=document.createElement('summary');detailTitle.textContent='Cost breakdown, warranties and comparison reasons';detail.append(detailTitle);
+    const cost=document.createElement('p');cost.className='hint';cost.textContent=`$${format(item.estimated_panel_hardware_cost_usd,2)} listed module hardware + $${format(item.estimated_other_equipment_installation_cost_usd,2)} estimated other equipment and installation. Cost range: $${format(item.estimated_cost_range_usd[0])}–$${format(item.estimated_cost_range_usd[1])}. Price checked ${model.price_date || 'date unavailable'}.`;
+    const reasons=document.createElement('ul');for(const reason of item.reasons){const li=document.createElement('li');li.textContent=reason;reasons.append(li);}
+    detail.append(cost,reasons);
+    if(model.notes){const note=document.createElement('p');note.className='hint';note.textContent=model.notes;detail.append(note);}
+    body.append(description,product,stats,scenario,status,button,detail);card.append(body);
+    $(featured?'recommendation-main':'recommendation-tiers').append(card);
+  }
+  $('recommendation-excluded').textContent=data.excluded_models.map(model=>`${model.model_name}: ${model.reason}`).join(' ');
+  $('recommendation-notes').textContent=data.notes+' Product warranty covers specified defects; performance warranty covers specified output. Neither establishes physical durability or actual lifespan. Missing specifications are unknown.';
+}
+async function updatePlan(selectedModelId=null) {
+  if(!currentJob || $('replan').disabled)return;
   $('error').hidden=true; $('replan').disabled=true;
   try {
-    const response=await fetch(`/api/plan/${encodeURIComponent(currentJob)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(planInputs())});
+    const response=await fetch(`/api/plan/${encodeURIComponent(currentJob)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...planInputs(), selected_model_id:selectedModelId})});
     const result=await response.json(); if(!response.ok)throw new Error(result.error || 'Could not update the plan.');
-    render(result,currentJob,true); $('status').textContent='Panel plan updated. No new Google API requests.';
+    render(result,currentJob,true); $('status').textContent='Panel recommendations and map updated. No new Google API requests.';
   } catch(e){error(e.message);} finally {$('replan').disabled=false;}
 }
 function zoom(factor,anchor) {
@@ -166,7 +256,7 @@ $('demo-button').addEventListener('click',()=>analyze(true));
 $('heat-toggle').addEventListener('change',()=> $('sunlight').setAttribute('visibility',$('heat-toggle').checked?'visible':'hidden'));
 $('zoom-in').addEventListener('click',()=>zoom(.75)); $('zoom-out').addEventListener('click',()=>zoom(1/.75));
 $('reset-map').addEventListener('click',()=>{if(originalView){view=[...originalView];setView();}});
-$('replan').addEventListener('click',updatePlan);
+$('replan').addEventListener('click',()=>updatePlan());
 $('lookup-addresses').addEventListener('click',async()=>{
   if(!currentJob)return;busy(true);$('error').hidden=true;
   try{const response=await fetch(`/api/addresses/${encodeURIComponent(currentJob)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({api_key:$('api-key').value})});const data=await response.json();if(!response.ok)throw new Error(data.error || 'Could not look up addresses.');$('api-key').value='';await poll(currentJob);}catch(e){error(e.message);}finally{busy(false);}

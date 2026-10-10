@@ -67,17 +67,25 @@ def describe_results(result):
         findings += f"The highest-ranked region is {label}, with an estimated {props['estimated_energy_kwh_year']:,.0f} kWh/year of screening potential. "
     plan = result.get("proposal")
     if plan:
-        findings += (f"Your proposed {plan['panel_count']}-panel layout is estimated to cost ${plan['estimated_cost_usd']:,.0f} "
+        model = plan.get("panel_model")
+        model_label = f" using {model['manufacturer']} {model['model_name']}" if model else ""
+        findings += (f"Your proposed {plan['panel_count']}-panel layout{model_label} is estimated to cost ${plan['estimated_cost_usd']:,.0f} "
                      f"and produce {plan['estimated_energy_kwh_year']:,.0f} kWh/year. ")
         findings += ("It meets the annual energy target under the current assumptions." if plan["target_met"] else
                      f"It leaves a shortfall of {plan['energy_shortfall_kwh_year']:,.0f} kWh/year against your target.")
     elif not ranked:
         findings += "No roof regions with usable sunlight data were available to estimate solar potential."
+    comparison = result.get("panel_recommendations")
+    if comparison:
+        meeting = sum(item["target_met"] for item in comparison["recommendations"])
+        findings += f" {meeting} of {len(comparison['recommendations'])} compared rigid panel models meet the target within the current budget and space assumptions."
     next_steps = (
         "Review the roof outlines and address matches, then confirm ownership and existing panels or obstructions. "
         "Ask a qualified solar installer to verify usable roof area, condition, shading, setbacks, and electrical capacity, "
         "and obtain a site-specific layout and quote before making an installation decision."
     )
+    if comparison:
+        next_steps = "Compare panel alternatives for installed cost, roof space and documented warranty coverage; confirm model-specific mounting and electrical compatibility. " + next_steps
     if not count:
         next_steps = "Try another address or radius and check Google Solar coverage. " + next_steps
     elif plan and not plan["target_met"]:

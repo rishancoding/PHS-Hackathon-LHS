@@ -13,7 +13,7 @@ def create_demo(directory):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     request = {
-        "address": "Synthetic neighborhood — demo data", "latitude": 37.422, "longitude": -122.084,
+        "address": "Synthetic neighborhood — demo data", "state": "CA", "latitude": 37.422, "longitude": -122.084,
         "radius_meters": 100, "radius_feet": 100 / .3048,
         "solar_parameters": solar_parameters(37.422, -122.084, 100),
     }

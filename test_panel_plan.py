@@ -15,7 +15,7 @@ def fixture():
 
 class PanelPlanTests(unittest.TestCase):
     def test_budget_constraint_and_shortfall(self):
-        plan = propose_panels(fixture(), budget_usd=1200, energy_target_kwh_year=1000)
+        plan = propose_panels(fixture(), budget_usd=1200, energy_target_kwh_year=1000, installed_cost_per_watt=3)
         self.assertEqual(plan["panel_count"], 1)
         self.assertEqual(plan["estimated_cost_usd"], 1200)
         self.assertEqual(plan["estimated_energy_kwh_year"], 400)
@@ -24,7 +24,7 @@ class PanelPlanTests(unittest.TestCase):
 
     def test_target_stops_selection_and_panels_fit_without_overlap(self):
         data = fixture()
-        plan = propose_panels(data, budget_usd=10000, energy_target_kwh_year=1000)
+        plan = propose_panels(data, budget_usd=10000, energy_target_kwh_year=1000, installed_cost_per_watt=3)
         self.assertTrue(plan["target_met"])
         self.assertEqual(plan["panel_count"], 3)
         self.assertEqual(plan["estimated_cost_usd"], 3600)

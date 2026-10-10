@@ -113,7 +113,7 @@ def validate_geocode(result):
     return latitude, longitude
 
 
-def geocode_address(address, api_key):
+def geocode_address(address, api_key, include_state=False):
     if not address.strip():
         raise InputError("Address cannot be empty.")
     # Do not country-filter: resolve foreign addresses honestly, then reject them.
@@ -130,7 +130,12 @@ def geocode_address(address, api_key):
         raise InputError("Address is ambiguous. Include the street number, city, state, and ZIP.")
     result = results[0]
     latitude, longitude = validate_geocode(result)
-    return result.get("formatted_address", address), latitude, longitude
+    answer = (result.get("formatted_address", address), latitude, longitude)
+    if include_state:
+        state = next((c.get("short_name") for c in result.get("address_components", [])
+                      if "administrative_area_level_1" in c.get("types", [])), None)
+        return (*answer, state)
+    return answer
 
 
 def solar_parameters(latitude, longitude, meters):
@@ -151,10 +156,11 @@ def prepare_request(address, radius, unit, api_key):
     if unit not in {"feet", "meters"}:
         raise InputError("Unit must be 'feet' or 'meters'.")
     meters = radius_in_meters(radius, unit)
-    formatted, latitude, longitude = geocode_address(address, api_key)
+    formatted, latitude, longitude, state = geocode_address(address, api_key, include_state=True)
     params = solar_parameters(latitude, longitude, meters)
     return {
         "address": formatted,
+        "state": state,
         "latitude": latitude,
         "longitude": longitude,
         "radius_meters": meters,

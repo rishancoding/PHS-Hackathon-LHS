@@ -14,7 +14,7 @@ from flask import Flask, abort, jsonify, render_template, request, send_from_dir
 from demo_roofready import run_demo
 from process_solar_layers import run_pipeline
 from solar_address import DEFAULT_API_KEY, InputError, radius_in_meters
-from panel_plan import propose_panels, validate_plan_inputs
+from panel_recommendations import build_recommendations, validate_recommendation_inputs, load_catalog
 from roof_details import add_roof_addresses, describe_results, save_report
 
 ROOT = Path(__file__).resolve().parent
@@ -64,7 +64,7 @@ def create_app(output_root=None):
                 result = run_pipeline(body["address"], body["radius"], body["unit"], key,
                                       directory, progress=progress, usable_fraction=body["usable_fraction"],
                                       panel_kw_per_m2=body["panel_kw_per_m2"])
-            result["proposal"] = propose_panels(result, **body["plan_inputs"])
+            build_recommendations(result, **body["plan_inputs"])
             save_report(result, directory)
             with lock:
                 jobs[job_id].update(status="complete", message="Analysis complete", result=result)
@@ -83,10 +83,8 @@ def create_app(output_root=None):
             return jsonify(error="Expected a JSON request."), 400
         key = os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
         try:
-            body["plan_inputs"] = validate_plan_inputs(**{
-                field: body.get(field, default) for field, default in
-                (("budget_usd", 25000), ("energy_target_kwh_year", 10000), ("installed_cost_per_watt", 3))
-            })
+            body["plan_inputs"] = validate_recommendation_inputs(body)
+            load_catalog()
             if body.get("demo") is not True:
                 supplied = body.get("api_key", "")
                 if not isinstance(supplied, str):
@@ -138,8 +136,7 @@ def create_app(output_root=None):
         if not isinstance(body, dict):
             return jsonify(error="Expected plan inputs."), 400
         try:
-            inputs = validate_plan_inputs(**{field: body.get(field) for field in
-                ("budget_usd", "energy_target_kwh_year", "installed_cost_per_watt")})
+            inputs = validate_recommendation_inputs(body)
         except InputError as exc:
             return jsonify(error=str(exc)), 400
         with lock:
@@ -147,7 +144,10 @@ def create_app(output_root=None):
             if not job or job["status"] != "complete":
                 abort(404)
             result = dict(job["result"])
-        result["proposal"] = propose_panels(result, **inputs)
+        try:
+            build_recommendations(result, **inputs)
+        except InputError as exc:
+            return jsonify(error=str(exc)), 400
         save_report(result, output_root / job_id)
         with lock:
             jobs[job_id]["result"] = result

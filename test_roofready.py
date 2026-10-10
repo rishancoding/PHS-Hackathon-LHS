@@ -97,13 +97,16 @@ class DashboardTests(unittest.TestCase):
             app = create_app(directory)
             client = app.test_client()
             try:
-                self.assertEqual(client.get("/").status_code, 200)
+                page = client.get("/")
+                self.assertEqual(page.status_code, 200)
+                self.assertIn(b'id="recommendation-tiers"', page.data)
+                self.assertIn(b'id="panel-priority"', page.data)
                 asset = client.get("/static/app.js")
                 self.assertEqual(asset.status_code, 200)
                 asset.close()
                 self.assertEqual(client.post("/api/analyze", json={"demo": True}).status_code, 403)
                 origin = {"Origin": "http://localhost"}
-                for field in ("budget_usd", "energy_target_kwh_year", "installed_cost_per_watt"):
+                for field in ("budget_usd", "energy_target_kwh_year"):
                     invalid = client.post("/api/analyze", headers=origin, json={"demo": True, field: -1})
                     self.assertEqual(invalid.status_code, 400)
                 response = client.post("/api/analyze", headers=origin,
@@ -124,15 +127,35 @@ class DashboardTests(unittest.TestCase):
                 self.assertIn("findings", data["result"]["report"])
                 self.assertGreater(data["result"]["proposal"]["panel_count"], 0)
                 replanned = client.post(f"/api/plan/{job}", headers=origin, json={
-                    "budget_usd": 1200, "energy_target_kwh_year": 10000, "installed_cost_per_watt": 3})
+                    "budget_usd": 2000, "energy_target_kwh_year": 10000, "installed_cost_per_watt": 3})
                 self.assertEqual(replanned.status_code, 200)
                 proposal = replanned.get_json()["proposal"]
-                self.assertEqual(proposal["panel_count"], 1)
-                self.assertLessEqual(proposal["estimated_cost_usd"], 1200)
+                self.assertGreater(proposal["panel_count"], 0)
+                self.assertIsNotNone(proposal["panel_model"])
+                self.assertEqual(len(replanned.get_json()["panel_recommendations"]["recommendations"]), 15)
+                self.assertLessEqual(proposal["estimated_cost_usd"], 2000)
                 self.assertFalse(proposal["target_met"])
                 saved = json.loads((Path(directory) / job / "results.json").read_text())
-                self.assertEqual(saved["proposal"]["budget_usd"], 1200)
+                self.assertEqual(saved["proposal"]["budget_usd"], 2000)
                 self.assertIn("shortfall", saved["report"]["findings"])
+                alternatives = saved["panel_recommendations"]["recommendations"]
+                chosen = next(item for item in alternatives if item["panel_count"] > 0
+                              and item["model"]["model_id"] != proposal["panel_model"]["model_id"])
+                changed = client.post(f"/api/plan/{job}", headers=origin, json={
+                    "budget_usd": 2000, "energy_target_kwh_year": 10000,
+                    "space_limit_m2": 10, "priority": "longer_warranty", "selected_model_id": chosen["model"]["model_id"]})
+                self.assertEqual(changed.status_code, 200)
+                result = changed.get_json()
+                self.assertEqual(result["proposal"]["panel_model"]["model_id"], chosen["model"]["model_id"])
+                self.assertLessEqual(result["proposal"]["panel_area_used_m2"], 10)
+                self.assertTrue(all(panel["model_id"] == chosen["model"]["model_id"] for panel in result["proposal"]["panels"]))
+                invalid = client.post(f"/api/plan/{job}", headers=origin, json={
+                    "budget_usd": 2000, "energy_target_kwh_year": 10000, "selected_model_id": "goalzero-13007"})
+                self.assertEqual(invalid.status_code, 400)
+                invalid = client.post(f"/api/plan/{job}", headers=origin, json={"space_limit_m2": -1})
+                self.assertEqual(invalid.status_code, 400)
+                persisted = json.loads((Path(directory) / job / "results.json").read_text())
+                self.assertEqual(persisted["panel_recommendations"]["selected_model_id"], chosen["model"]["model_id"])
                 for filename in ("aerial.png", "sunlight.png", "roofs.csv", "roofs.geojson", "summary.txt"):
                     response = client.get(f"/results/{job}/{filename}")
                     self.assertEqual(response.status_code, 200)
