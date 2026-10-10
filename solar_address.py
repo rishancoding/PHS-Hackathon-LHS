@@ -50,10 +50,10 @@ def https_context():
         return ssl.create_default_context()
 
 
-def get_json(url, params):
+def get_json(url, params, *, timeout=30):
     """Request JSON without printing a URL containing the API key."""
     try:
-        with urlopen(url + "?" + urlencode(params), timeout=30, context=https_context()) as response:
+        with urlopen(url + "?" + urlencode(params), timeout=timeout, context=https_context()) as response:
             return json.load(response)
     except HTTPError as exc:
         # Google normally supplies a useful JSON error; never expose the keyed URL.

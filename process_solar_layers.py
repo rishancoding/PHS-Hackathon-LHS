@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.request import urlopen
 
 import numpy as np
@@ -34,7 +35,7 @@ def download_layers(data, api_key, directory, progress=lambda message: None):
     """Fetch only Google's authenticated TIFF URLs; never save keyed URLs to disk."""
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
-    paths = {}
+    requests = []
     for name, field in LAYERS.items():
         url = data.get(field)
         if not url:
@@ -45,9 +46,13 @@ def download_layers(data, api_key, directory, progress=lambda message: None):
         query = [(k, v) for k, v in parse_qsl(parts.query) if k != "key"]
         query.append(("key", api_key))
         authenticated = urlunsplit(parts._replace(query=urlencode(query)))
+        requests.append((name, authenticated))
+
+    def download(item):
+        name, authenticated = item
         target = directory / f"{name}.tif"
         temporary = target.with_suffix(".part")
-        progress(f"Downloading {name.replace('_', ' ')}…")
+
         try:
             with urlopen(authenticated, timeout=90, context=https_context()) as response, temporary.open("wb") as output:
                 total = 0
@@ -67,7 +72,15 @@ def download_layers(data, api_key, directory, progress=lambda message: None):
         finally:
             if temporary.exists():
                 temporary.unlink()
-        paths[name] = target
+        return name, target
+
+    paths = {}
+    progress("Downloading imagery, roof mask, sunlight, and elevation together…")
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(download, item) for item in requests]
+        for future in as_completed(futures):
+            name, target = future.result()
+            paths[name] = target
     return paths
 
 

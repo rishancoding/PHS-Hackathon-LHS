@@ -1,7 +1,10 @@
 """Conceptual panel placements constrained by a user budget and annual energy target."""
 
 import math
-from shapely.geometry import box, mapping, shape
+
+import numpy as np
+from shapely import box as vector_boxes, covers, prepare
+from shapely.geometry import mapping, shape
 
 from solar_address import InputError
 from installation_cost import estimate_installation_cost
@@ -22,7 +25,7 @@ def validate_plan_inputs(budget_usd=25000, energy_target_kwh_year=10000, install
 
 
 def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, installed_cost_per_watt=None,
-                   panel_model=None, space_limit_m2=None):
+                   panel_model=None, space_limit_m2=None, _geometry_cache=None, budget_includes_installation=True):
     cost_estimate = estimate_installation_cost(result) if installed_cost_per_watt is None else None
     if cost_estimate:
         installed_cost_per_watt = cost_estimate["installed_cost_per_watt"]
@@ -42,7 +45,14 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
     panel_area = panel_width * panel_height
     panel_kw = panel_model["rated_power_w"] / 1000 if panel_model else 2 * assumptions["panel_kw_per_m2"]
     panel_cost = panel_kw * 1000 * inputs["installed_cost_per_watt"]
-    budget_count = math.floor(inputs["budget_usd"] / panel_cost)
+    if not isinstance(budget_includes_installation, bool):
+        raise InputError("Budget includes installation must be true or false.")
+    if not budget_includes_installation and not panel_model:
+        raise InputError("A catalog panel model is required for a panels-only budget.")
+    budget_panel_cost = panel_cost if budget_includes_installation else panel_model["price_usd"]
+    if not math.isfinite(budget_panel_cost) or budget_panel_cost <= 0:
+        raise InputError("Panel budget cost must be finite and greater than zero.")
+    budget_count = math.floor(inputs["budget_usd"] / budget_panel_cost)
     limit = min(budget_count, 5000)
     panels, energy = [], 0.0
     search_limited = False
@@ -51,6 +61,7 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
                          for r in result["roofs"] if r["properties"].get("annual_yield_kwh_per_kw") and r.get("preview_geometry"))
     if space_limit_m2 is not None:
         limit = min(limit, math.floor(space_limit_m2 / panel_area))
+    geometry_cache = {} if _geometry_cache is None else _geometry_cache
     roofs = sorted(result["roofs"], key=lambda r: r["properties"].get("annual_yield_kwh_per_kw") or 0, reverse=True)
     counts = {}
     for roof in roofs:
@@ -58,8 +69,12 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
         yield_value = properties.get("annual_yield_kwh_per_kw")
         if not yield_value or not roof.get("preview_geometry"):
             continue
-        polygon = shape(roof["preview_geometry"])
-        min_x, min_y, max_x, max_y = polygon.bounds
+        geometry_key = id(roof)
+        if geometry_key not in geometry_cache:
+            polygon = shape(roof["preview_geometry"])
+            prepare(polygon)
+            geometry_cache[geometry_key] = polygon
+        polygon = geometry_cache[geometry_key]
         roof_limit = math.floor(properties["area_m2"] * assumptions["usable_roof_fraction"]
                                 * properties["flux_coverage_percent"] / 100 / panel_area)
         # Try both axis-aligned orientations; use the one fitting more modules.
@@ -70,28 +85,16 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
         candidate_limit = min(roof_limit, remaining, needed)
         layouts = []
         for width_m, height_m in sorted({(panel_width, panel_height), (panel_height, panel_width)}):
-            width, height = width_m / resolution, height_m / resolution
-            step_x, step_y = (width_m + .2) / resolution, (height_m + .2) / resolution
-            rows = max(0, math.floor((max_y - min_y - height) / step_y) + 1)
-            cols = max(0, math.floor((max_x - min_x - width) / step_x) + 1)
-            layout = []
-            # Bound work for very large/irregular polygons or tiny catalog modules.
-            for index in range(min(rows * cols, 50000)):
-                if len(layout) >= candidate_limit:
-                    break
-                row, col = divmod(index, cols)
-                x, y = min_x + col * step_x, min_y + row * step_y
-                panel = box(x, y, x + width, y + height)
-                if polygon.covers(panel):
-                    layout.append(panel)
-            if rows * cols > 50000 and len(layout) < candidate_limit:
-                search_limited = True
+            layout, limited = fit_grid(polygon, width_m, height_m, resolution, candidate_limit)
+            search_limited |= limited
             layouts.append(layout)
         layout = max(layouts, key=len)
         count = len(layout)
         for panel in layout:
             panel_energy = panel_kw * yield_value
+            left, top, right, bottom = panel.bounds
             panels.append({"roof_id": properties["id"], "preview_geometry": mapping(panel),
+                           "width_m": (right - left) * resolution, "height_m": (bottom - top) * resolution,
                            "model_id": panel_model["model_id"] if panel_model else None,
                            "estimated_energy_kwh_year": round(panel_energy, 2)})
             energy += panel_energy
@@ -100,13 +103,14 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
             break
     target_met = energy + 1e-8 >= inputs["energy_target_kwh_year"]
     if target_met:
-        status = "Estimated annual energy target met within budget."
+        status = "Estimated annual energy target met within the selected budget scope."
     elif search_limited:
         status = "Layout search limit reached; target remains unmet in this screening layout."
     elif space_limit_m2 is not None and limit < budget_count and len(panels) >= limit:
         status = "Usable space limit reached; estimated annual energy target remains unmet."
     elif budget_count == 0:
-        status = "Budget is below the estimated installed cost of one panel."
+        status = ("Budget is below the estimated installed cost of one panel." if budget_includes_installation
+                  else "Budget is below the panel hardware cost of one panel.")
     elif len(panels) >= 5000 and budget_count > 5000:
         status = "Reached the 5,000-panel planning limit; energy target remains unmet."
     elif len(panels) >= budget_count:
@@ -115,6 +119,8 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
         status = "Available candidate roof space is insufficient for the energy target."
     return {
         **inputs, "installation_estimate": cost_estimate,
+        "budget_includes_installation": budget_includes_installation,
+        "budget_cost_usd": round(len(panels) * budget_panel_cost, 2),
         "estimated_cost_range_usd": [round(len(panels)*panel_cost*.75,2), round(len(panels)*panel_cost*1.25,2)] if cost_estimate else None,
         "panel_count": len(panels), "estimated_cost_usd": round(len(panels) * panel_cost, 2),
         "estimated_energy_kwh_year": round(energy, 2), "energy_shortfall_kwh_year": round(max(0, inputs["energy_target_kwh_year"] - energy), 2),
@@ -124,3 +130,27 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
         "panel_area_used_m2": round(len(panels) * panel_area, 3), "layout_search_limited": search_limited, "counts_by_roof": counts, "panels": panels,
         "notes": "Concept layout using roof-average yield and an estimated installed price. Existing panels, obstructions, roof ownership, slope, and required setbacks are not detected or excluded. This is not an installation design or quote.",
     }
+
+
+def fit_grid(polygon, width_m, height_m, resolution, candidate_limit):
+    """Same grid and scan order as before, with batched GEOS checks instead of Python loops."""
+    if candidate_limit <= 0:
+        return [], False
+    min_x, min_y, max_x, max_y = polygon.bounds
+    width, height = width_m / resolution, height_m / resolution
+    step_x, step_y = (width_m + .2) / resolution, (height_m + .2) / resolution
+    rows = max(0, math.floor((max_y - min_y - height) / step_y) + 1)
+    cols = max(0, math.floor((max_x - min_x - width) / step_x) + 1)
+    layout = []
+    positions = min(rows * cols, 50000)
+    batch_size = min(1024, max(64, candidate_limit * 2))
+    for start in range(0, positions, batch_size):
+        indices = np.arange(start, min(start + batch_size, positions))
+        row, col = np.divmod(indices, cols)
+        x, y = min_x + col * step_x, min_y + row * step_y
+        rectangles = vector_boxes(x, y, x + width, y + height)
+        fitting = rectangles[covers(polygon, rectangles)]
+        layout.extend(fitting[:candidate_limit - len(layout)].tolist())
+        if len(layout) >= candidate_limit:
+            break
+    return layout, rows * cols > 50000 and len(layout) < candidate_limit

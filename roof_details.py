@@ -1,6 +1,7 @@
 """Address labels, readable findings, and consistent downloadable reports."""
 
 import csv
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 import json
 from pathlib import Path
 from shapely.geometry import Point, shape
@@ -8,44 +9,67 @@ from solar_address import GEOCODING_URL, InputError, get_json
 
 
 def add_roof_addresses(result, api_key=None, progress=lambda message: None):
-    cache = {}
-    unavailable = False
-    for index, roof in enumerate(result["roofs"], 1):
+    if result.get("demo"):
+        for index, roof in enumerate(result["roofs"], 1):
+            roof["properties"].update(address=f"{100 + index * 2} Demo Solar Lane (synthetic)", address_status="synthetic")
+        return result
+    points = {}
+    for roof in result["roofs"]:
         props = roof["properties"]
-        if result.get("demo"):
-            props.update(address=f"{100 + index * 2} Demo Solar Lane (synthetic)", address_status="synthetic")
-            continue
         if props.get("address_status") in ("reverse_geocoded", "nearby_address"):
             continue
         props.update(address="Address unavailable", address_status="unavailable")
-        if not api_key or unavailable:
+        if not api_key:
             continue
-        progress(f"Looking up roof addresses ({index}/{len(result['roofs'])})…")
         polygon = shape(roof["geometry"])
         point = polygon.representative_point()
         latlng = f"{point.y:.6f},{point.x:.6f}"
+        points.setdefault(latlng, []).append((props, polygon))
+    if not points:
+        return result
+
+    def lookup(latlng):
         try:
-            if latlng not in cache:
-                cache[latlng] = get_json(GEOCODING_URL, {"latlng": latlng, "result_type": "street_address|premise", "key": api_key})
-            data = cache[latlng]
-            if data.get("status") not in ("OK", "ZERO_RESULTS"):
-                unavailable = True
-                props["address_status"] = "lookup_failed"
-                continue
-            candidates = [r for r in data.get("results", []) if r.get("formatted_address")]
-            if not candidates:
-                continue
-            matches = []
-            for candidate in candidates:
-                location = candidate.get("geometry", {}).get("location", {})
-                if "lng" in location and "lat" in location and polygon.covers(Point(location["lng"], location["lat"])):
-                    matches.append(candidate)
-            chosen = (matches or candidates)[0]
-            props.update(address=chosen["formatted_address"],
-                         address_status="reverse_geocoded" if matches else "nearby_address")
+            return get_json(GEOCODING_URL, {"latlng": latlng, "result_type": "street_address|premise", "key": api_key}, timeout=8)
         except InputError:
-            props["address_status"] = "lookup_failed"
-            unavailable = True
+            return {"status": "LOOKUP_FAILED"}
+
+    pending = iter(points)
+    completed = 0
+    unavailable = False
+    progress(f"Looking up roof addresses (0/{len(points)})…")
+    # Keep only four requests in flight; stop scheduling after a service/key failure.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {pool.submit(lookup, latlng): latlng for latlng in [next(pending) for _ in range(min(4, len(points)))]}
+        while futures:
+            done, _ = wait(futures, return_when=FIRST_COMPLETED)
+            for future in done:
+                latlng = futures.pop(future)
+                data = future.result()
+                completed += 1
+                if data.get("status") not in ("OK", "ZERO_RESULTS"):
+                    unavailable = True
+                    for props, _ in points[latlng]:
+                        props["address_status"] = "lookup_failed"
+                    continue
+                candidates = [r for r in data.get("results", []) if r.get("formatted_address")]
+                for props, polygon in points[latlng]:
+                    if not candidates:
+                        continue
+                    matches = []
+                    for candidate in candidates:
+                        location = candidate.get("geometry", {}).get("location", {})
+                        if "lng" in location and "lat" in location and polygon.covers(Point(location["lng"], location["lat"])):
+                            matches.append(candidate)
+                    props.update(address=(matches or candidates)[0]["formatted_address"],
+                                 address_status="reverse_geocoded" if matches else "nearby_address")
+            progress(f"Looking up roof addresses ({completed}/{len(points)})…")
+            if not unavailable:
+                for _ in range(4 - len(futures)):
+                    latlng = next(pending, None)
+                    if latlng is None:
+                        break
+                    futures[pool.submit(lookup, latlng)] = latlng
     return result
 
 
@@ -73,12 +97,20 @@ def describe_results(result):
                      f"and produce {plan['estimated_energy_kwh_year']:,.0f} kWh/year. ")
         findings += ("It meets the annual energy target under the current assumptions." if plan["target_met"] else
                      f"It leaves a shortfall of {plan['energy_shortfall_kwh_year']:,.0f} kWh/year against your target.")
+        if plan.get("budget_includes_installation") is False:
+            findings += (f" Your ${plan['budget_usd']:,.0f} budget covers module hardware only "
+                         f"(${plan['budget_cost_usd']:,.0f}); other equipment and installation "
+                         f"(${plan['estimated_other_equipment_installation_cost_usd']:,.0f}) cost extra.")
     elif not ranked:
         findings += "No roof regions with usable sunlight data were available to estimate solar potential."
     comparison = result.get("panel_recommendations")
     if comparison:
         meeting = sum(item["target_met"] for item in comparison["recommendations"])
         findings += f" {meeting} of {len(comparison['recommendations'])} compared rigid panel models meet the target within the current budget and space assumptions."
+    selection = result.get("roof_selection")
+    if selection:
+        findings += (f" Panel planning uses {len(selection['included_roof_ids'])} included roof regions; "
+                     f"{len(selection['excluded_roof_ids'])} were excluded by you. Roof-potential rankings still show all detected candidates.")
     next_steps = (
         "Review the roof outlines and address matches, then confirm ownership and existing panels or obstructions. "
         "Ask a qualified solar installer to verify usable roof area, condition, shading, setbacks, and electrical capacity, "

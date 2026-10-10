@@ -2,57 +2,130 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RoofReady — neighborhood solar screening</title>
+  <title>RoofReady · Solar planning</title>
+  <meta name="theme-color" content="#203542">
+  <link rel="icon" href="/static/roofready-mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/loading.js" defer></script>
   <script src="/static/app.js" defer></script>
+  <script src="/static/address.js" defer></script>
 </head>
 <body>
-  <header><a class="brand" href="/">☀ <span>RoofReady</span></a><span class="header-note">NEIGHBORHOOD SOLAR SCREENING</span><span class="pill">Local workspace</span></header>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="RoofReady home"><img src="/static/roofready-mark.svg" width="34" height="34" alt=""><span>RoofReady</span></a>
+    <span class="header-note">Solar planning</span>
+    <nav id="result-nav" aria-label="Analysis sections" hidden><a href="#map-section">Map</a><a href="#panel-recommendation-section">Panels</a><a href="#roof-results">Roofs</a></nav>
+    <button id="new-search" class="text-button header-help" type="button">Edit search</button>
+  </header>
   <main>
-    <section class="intro"><p class="eyebrow">START WITH A PLACE. FIND THE POTENTIAL.</p><h1>A clearer view of<br>your neighborhood’s solar future.</h1><p>Explore rooftops within a radius. Compare estimated solar yield.<br>Find the places worth a closer look.</p></section>
+    <section id="intro" class="intro"><h1>Plan solar for your area</h1><p>Start with an address, a budget, and your annual energy need.</p></section>
     <div class="workspace">
-      <aside class="card"><div class="section-title"><span class="step">01</span><h2>Set your search area</h2></div>
+      <section class="results" aria-label="Analysis map and selected panel">
+        <p id="status" role="status" aria-live="polite">Enter an address or try the sample area.</p>
+        <div id="error" role="alert" hidden></div>
+        <div id="empty" class="card empty">
+          <div class="empty-map" aria-hidden="true"><svg viewBox="0 0 420 200" focusable="false"><path class="street" d="M-20 145H440M275 -10V210"/><g class="empty-buildings"><path d="M50 38h105v66H50zM50 165h125v50H50zM310 28h70v68h-70zM312 170h85v60h-85z"/><path class="empty-roof" d="M180 38h60v66h-60z"/></g><g class="empty-panels"><path d="M189 47h17v23h-17zM213 47h17v23h-17zM189 76h17v20h-17zM213 76h17v20h-17z"/></g></svg></div>
+          <div><h2>See what fits on the roof</h2><p>Your analysis will show aerial imagery, roof boundaries, and panels drawn at their actual dimensions.</p><a class="text-link" href="#search-controls">Enter your search below ↓</a><p class="hint">Or try the sample area. Its roofs and sunlight data are synthetic.</p></div>
+        </div>
+        <div id="result-content" hidden>
+          <div class="result-heading">
+            <div><span id="source-badge" class="eyebrow"></span><p class="analysis-label">Solar analysis</p><h1 id="result-address"></h1><p id="search-summary" class="hint"></p></div>
+            <div class="result-actions"><button id="edit-search" class="secondary" type="button">Edit search</button><a id="pdf-export" class="primary report-download">Download PDF ↓</a></div>
+          </div>
+          <div class="summary-metrics" aria-label="Selected configuration summary">
+            <div><span>System capacity</span><strong id="system-capacity">Unavailable</strong><small id="capacity-note">DC nameplate rating</small></div>
+            <div><span>Annual production</span><strong id="summary-energy">Unavailable</strong><small>Estimated kWh / year</small></div>
+            <div><span>Installed estimate</span><strong id="summary-cost">Unavailable</strong><small id="summary-cost-note">USD · screening estimate</small></div>
+            <div><span>Energy target covered</span><strong id="summary-coverage">Unavailable</strong><small id="summary-target-note">Annual production / requested energy</small></div>
+          </div>
+          <div class="map-workspace">
+            <details id="map-section" class="card map-card" open>
+              <summary class="roof-section-summary">Layout preview <span>Aerial &amp; sunlight</span></summary>
+              <div class="map-toolbar"><label class="toggle"><input id="heat-toggle" type="checkbox"> Show sunlight</label><div><button id="zoom-out" type="button" aria-label="Zoom out">−</button><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="reset-map" type="button">Reset view</button></div></div>
+              <div class="map-wrap"><svg id="roof-map" role="img" aria-label="Aerial image and selectable candidate roof outlines" preserveAspectRatio="xMidYMid meet"><title>Candidate roof map</title><image id="aerial"/><image id="sunlight" visibility="hidden"/><g id="outlines"></g><g id="proposed-panels"></g><g id="center-marker"><circle r="5" fill="#fff" stroke="#183f32" stroke-width="2"/><circle r="1.5" fill="#183f32"/></g></svg></div>
+              <div class="map-footer"><span class="map-legend"><i class="roof-key"></i> Roof boundary <i class="panel-key"></i> Proposed panel <i class="excluded-key"></i> Excluded</span><span><span id="imagery-source">Imagery: Google Solar API</span> <span id="imagery-date"></span></span></div>
+              <p class="hint map-help">Scroll or pinch to zoom · drag to pan · double-click to zoom in</p>
+              <p id="panel-map-scale" class="hint map-scale" role="status" aria-live="polite"></p>
+              <div id="selected-roof" class="selected-roof" hidden><h3 id="selected-address"></h3><p id="selected-roof-info" class="hint"></p></div>
+            </details>
+            <aside class="card chosen-panel" aria-labelledby="chosen-panel-name">
+              <p id="chosen-panel-label" class="eyebrow">Panel shown on map</p><h2 id="chosen-panel-name">Choose a panel recommendation</h2><p id="chosen-panel-description"></p><a id="chosen-panel-link" class="text-link" target="_blank" rel="noopener noreferrer" hidden>Panel specifications ↗</a>
+              <dl class="key-values chosen-stats"><div><dt>Rated power / panel</dt><dd id="selected-power">Unavailable</dd></div><div><dt>Panels in layout</dt><dd id="selected-count">Unavailable</dd></div><div><dt>DC capacity</dt><dd id="selected-capacity">Unavailable</dd></div><div><dt>Annual output</dt><dd id="selected-energy">Unavailable</dd></div><div><dt>Hardware / panel</dt><dd id="selected-unit-cost">Unavailable</dd></div><div><dt>Module hardware</dt><dd id="selected-hardware-cost">Unavailable</dd></div><div><dt>Other equipment &amp; installation</dt><dd id="selected-other-cost">Unavailable</dd></div><div class="total"><dt>Installed estimate</dt><dd id="selected-total-cost">Unavailable</dd></div></dl>
+              <p id="selected-rationale" class="recommendation-rationale"></p><div class="chosen-actions"><a id="compare-models" class="secondary" href="#panel-recommendation-section">Compare panel models</a><button id="explain-placement" class="text-button" type="button">Why are panels placed here?</button></div>
+            </aside>
+          </div>
+        </div>
+      </section>
+      <details id="search-controls" class="card search-card" open>
+        <summary id="search-heading" class="roof-section-summary">Search area <span>Address, budget &amp; energy needs</span></summary><div class="search-body">
         <form id="analysis-form">
-          <label for="address">Street address</label><input id="address" name="address" required placeholder="Street, city, state, ZIP" value="1600 Amphitheatre Parkway, Mountain View, CA 94043">
+          <label for="address">Street address</label><div class="address-control"><input id="address" name="address" required placeholder="Start with the street number…" autocomplete="off" maxlength="200" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="address-options" aria-describedby="address-help"><div id="address-dropdown" class="address-dropdown" hidden><ul id="address-options" role="listbox" aria-label="Suggested street addresses"></ul><div id="address-attribution" class="address-attribution" translate="no" hidden>Google Maps</div></div></div><p id="address-help" class="hint" role="status" aria-live="polite">Start typing, then choose an address below. You can also enter it yourself.</p>
           <div class="input-row"><div><label for="radius">Radius</label><input id="radius" name="radius" type="number" min="0.01" step="any" value="100" required></div><div><label for="unit">Unit</label><select id="unit" name="unit"><option value="meters">Meters</option><option value="feet">Feet</option></select></div></div>
           <p class="hint">Lower 48 states + DC · Up to 1,000 m</p>
-          <label for="budget">Installation budget (USD)</label><input id="budget" type="number" min="0.01" step="any" value="25000" required>
+          <label id="budget-label" for="budget">Installation budget (USD)</label><input id="budget" type="number" min="0.01" step="any" value="25000" required>
+          <label class="budget-toggle" for="budget-includes-installation"><input id="budget-includes-installation" type="checkbox" checked aria-describedby="budget-scope-help"> Budget includes installation</label><p id="budget-scope-help" class="hint">Your budget covers panels, other equipment, and estimated installation.</p>
           <label for="energy-target">Energy output needed (kWh / year)</label><input id="energy-target" type="number" min="0.01" step="any" value="10000" required>
           <label for="space-limit">Maximum panel area (m², optional)</label><input id="space-limit" type="number" min="0.01" step="any" placeholder="Use detected usable roof area">
           <label for="panel-priority">Panel recommendation priority</label><select id="panel-priority"><option value="balanced">Balanced / best overall fit</option><option value="lowest_cost">Lower installed cost</option><option value="space_efficiency">Use less roof space</option><option value="longer_warranty">Longer documented warranty</option></select>
           <p class="hint">The space cap applies to total module area across candidate roofs. Actual roof fit and spacing are checked separately.</p>
           <p class="hint">Equipment and installation cost is estimated automatically from the address region. The estimate is a screening model, not a quote. Energy is annual output.</p>
           <details><summary>Estimation assumptions</summary><label for="usable">Usable roof fraction</label><input id="usable" type="number" min="0.01" max="1" step="0.01" value="0.65"><label for="density">Roof potential density (kW/m²)</label><input id="density" type="number" min="0.01" max="1" step="0.01" value="0.20"><p class="hint">Used for roof-potential rankings. Panel recommendations use actual model watts and dimensions.</p></details>
-          <details {% if not configured %}open{% endif %}><summary>Google API key {% if configured %}· configured{% endif %}</summary><label for="api-key">Key for this analysis</label><input id="api-key" type="password" autocomplete="off" placeholder="{% if configured %}Optional override{% else %}Paste your API key{% endif %}"><p class="hint">Used by the local Python server. Not saved in results.</p></details>
-          <button id="analyze" type="submit" class="primary">Analyze rooftops <span>↗</span></button>
+          <details {% if not configured %}open{% endif %}><summary>Google API key {% if configured %}· configured{% endif %}</summary><label for="api-key">Key for this analysis</label><input id="api-key" type="password" autocomplete="off" placeholder="{% if configured %}Optional override{% else %}Paste your API key{% endif %}"><p class="hint">Used by the local Python server. Not saved in results. Live address suggestions also require Places API (New).</p></details>
+
+          <button id="analyze" type="submit" class="primary">Find roofs and panels</button>
           <p class="hint">Uses Google Geocoding and Solar APIs. Requests may incur charges.</p>
         </form>
-        <div class="demo"><p>Take a look before you search</p><button id="demo-button" type="button" class="secondary">Explore a synthetic demo</button></div>
+        <div class="demo"><p>Try it without an API request</p><button id="demo-button" type="button" class="secondary">Try the sample area</button></div>
         <div id="history-wrap" hidden><label for="history">Open a saved analysis</label><select id="history"><option value="">Choose an analysis</option></select></div>
-      </aside>
-      <section class="results">
-        <div id="status" role="status" aria-live="polite">Ready when you are. Enter an address or explore the demo.</div>
-        <div id="error" role="alert" hidden></div>
-        <div id="empty" class="card empty"><div class="empty-icon">⌖</div><h2>Your search starts here</h2><p>We’ll bring together aerial imagery, candidate roof outlines,<br>and estimated annual solar energy for your area.</p><div class="flow"><span>Address</span>→<span>Solar layers</span>→<span>Candidate roofs</span>→<span>Ranked results</span></div></div>
-        <div id="result-content" hidden>
-          <div class="result-heading"><div><span id="source-badge" class="eyebrow"></span><h2 id="result-address"></h2><p id="result-meta" class="hint"></p></div><a id="json-export" class="text-link">Download analysis ↗</a></div>
-          <details id="map-section" class="card map-card result-section" open><summary class="roof-section-summary">Your chosen panel and map <span>Expand / collapse</span></summary><div class="chosen-panel"><p id="chosen-panel-label" class="eyebrow">PANEL PLOTTED ON THE MAP</p><h2 id="chosen-panel-name">Choose a panel recommendation</h2><p id="chosen-panel-description"></p><a id="chosen-panel-link" class="text-link" target="_blank" rel="noopener noreferrer" hidden>View this solar panel ↗</a></div><div class="map-toolbar"><h3>Explore the area</h3><div><label class="toggle"><input id="heat-toggle" type="checkbox"> Sunlight</label><button id="zoom-out" type="button" aria-label="Zoom out">−</button><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="reset-map" type="button">Reset</button></div></div><p class="zoom-hint hint">Scroll or pinch to zoom · drag to pan · double-click to zoom in</p><div class="map-wrap"><svg id="roof-map" role="img" aria-label="Aerial image and selectable candidate roof outlines"><title>Candidate roof map</title><image id="aerial"/><image id="sunlight" visibility="hidden"/><g id="outlines"></g><g id="proposed-panels"></g><g id="center-marker"><circle r="5" fill="#fff" stroke="#183f32" stroke-width="2"/><circle r="1.5" fill="#183f32"/></g></svg></div><div class="map-footer"><span><i></i> Green: candidate roof · blue: proposed panel</span><span>Imagery: Google Solar API <span id="imagery-date"></span></span></div></details>
+      </div></details>
+      <section class="results" aria-label="Solar recommendations and findings">
+        <div id="result-details" hidden>
+          <div class="performance-grid">
+            <section class="card data-panel" aria-labelledby="cost-heading"><div class="section-header"><h2 id="cost-heading">Cost &amp; budget</h2><span class="hint">Selected layout · USD</span></div>
+              <div id="cost-chart" class="cost-chart" role="img" aria-label="Cost breakdown unavailable"><span id="cost-hardware-bar"></span><span id="cost-other-bar"></span></div>
+              <dl class="key-values"><div><dt><i class="chart-key hardware-key"></i> Module hardware</dt><dd id="cost-hardware">Unavailable</dd></div><div><dt><i class="chart-key other-key"></i> Other equipment &amp; installation</dt><dd id="cost-other">Unavailable</dd></div><div class="total"><dt>Total installed estimate</dt><dd id="cost-total">Unavailable</dd></div><div><dt id="cost-budget-label">Your budget</dt><dd id="cost-budget">Unavailable</dd></div><div><dt id="cost-balance-label">Budget remaining</dt><dd id="cost-balance">Unavailable</dd></div></dl>
+              <p id="cost-range" class="hint"></p><p class="hint">Other equipment and installation are estimated together. A separate labor cost is unavailable.</p>
+            </section>
+            <section class="card data-panel" aria-labelledby="performance-heading"><div class="section-header"><h2 id="performance-heading">Energy &amp; space</h2><span class="hint">Selected layout · annual</span></div>
+              <div class="coverage-heading"><strong id="performance-coverage">Unavailable</strong><span>of your energy target</span></div><div id="target-meter" class="target-meter" role="meter" aria-label="Annual energy target coverage" aria-valuemin="0" aria-valuemax="100"><span id="target-meter-fill"></span></div><p id="target-status" class="target-status" role="status"></p>
+              <dl class="key-values"><div><dt>Estimated production</dt><dd id="performance-energy">Unavailable</dd></div><div><dt>Requested annual energy</dt><dd id="performance-target">Unavailable</dd></div><div><dt>Module area used</dt><dd id="performance-area">Unavailable</dd></div><div><dt>Yield per installed kW</dt><dd id="performance-yield">Unavailable</dd></div><div><dt>Annual bill savings</dt><dd>Not estimated</dd></div></dl><p class="hint">Energy uses average roof sunlight. Savings need electricity pricing and usage data.</p>
+            </section>
+          </div>
           <details id="panel-recommendation-section" class="card recommendation-section result-section" open>
-            <summary id="recommendation-heading" class="roof-section-summary">Ranked panel recommendations <span>Expand / collapse</span></summary>
-            <div class="recommendation-content"><div class="table-heading"><p id="recommendation-summary"></p><button id="replan" class="secondary" type="button">Update recommendations</button></div>
-              <div id="recommendation-main"></div>
-              <details id="recommendation-others" class="comparison"><summary id="recommendation-others-label">View other panel suggestions</summary><div id="recommendation-tiers" class="roof-accordions"></div></details>
-              <details class="comparison"><summary>Other catalog models and comparison assumptions</summary><div class="section-body"><p id="recommendation-excluded" class="hint"></p><p id="recommendation-notes" class="hint"></p></div></details>
+            <summary id="recommendation-heading" class="roof-section-summary">Compare panel models <span>Ranked for your constraints</span></summary>
+            <div class="recommendation-content"><div class="table-heading"><p id="recommendation-summary"></p><div class="comparison-actions"><a id="view-selected-map" class="text-link" href="#map-section">View selected layout ↑</a><button id="replan" class="secondary" type="button">Update recommendations</button></div></div><p id="top-recommendation-reason" class="ranking-note"></p>
+              <div class="table-scroll" tabindex="0" aria-label="Ranked panel models; scroll horizontally to view all statistics"><table class="catalog-table"><caption class="sr-only">Each model uses the same budget, included roofs, energy target, and area limit.</caption><thead><tr><th scope="col">Rank</th><th scope="col">Manufacturer &amp; model</th><th scope="col">Power</th><th scope="col">Dimensions</th><th scope="col">Panels in plan</th><th scope="col">Annual kWh</th><th scope="col">Installed cost</th><th scope="col">Target coverage</th><th scope="col">Map preview</th></tr></thead><tbody id="catalog-rows"></tbody></table></div>
+              <details class="comparison model-detail-disclosure"><summary>Recommendation details, warranties &amp; alternative uses</summary><div id="recommendation-main"></div><details id="recommendation-others" class="comparison"><summary id="recommendation-others-label">View other panel suggestions</summary><div id="recommendation-tiers" class="roof-accordions"></div></details></details>
             </div>
           </details>
-          <details id="plan-section" class="card proposal-card result-section"><summary class="roof-section-summary">Selected panel plan and cost <span>Expand / collapse</span></summary><div class="proposal-metrics"><div><span>Proposed panels</span><strong id="panel-count">—</strong></div><div><span>Estimated installed cost</span><strong id="plan-cost">—</strong></div><div><span>Estimated output (kWh/year)</span><strong id="plan-energy">—</strong></div></div><p id="plan-status" role="status"></p><p id="plan-notes" class="hint"></p></details>
-          <details class="card result-section overview-section"><summary class="roof-section-summary">Search overview <span>Expand / collapse</span></summary><div class="metrics"><div class="card"><span>Candidate roofs</span><strong id="roof-count">—</strong></div><div class="card"><span>Total estimated energy</span><strong id="total-energy">—</strong><small>kWh / year</small></div><div class="card"><span>Sunlight data coverage</span><strong id="coverage">—</strong></div></div></details>
-          <div id="selected-roof" class="card selected-roof" hidden><h3 id="selected-address"></h3><p id="selected-roof-info" class="hint"></p></div><details id="roof-results" class="card table-card" open><summary class="roof-section-summary">Ranked roof candidates <span>Expand / collapse</span></summary><div class="table-heading"><div><h3>Rooftops, ranked by potential</h3><p class="hint">Estimated energy for the roof portion within your radius</p></div><div><button id="lookup-addresses" class="secondary" type="button">Look up roof addresses</button><a id="csv-export" class="text-link">CSV ↓</a><a id="geojson-export" class="text-link">GeoJSON ↓</a></div></div><div id="roof-accordions" class="roof-accordions"></div><details class="comparison"><summary>Compare all roofs in a table</summary><div class="table-scroll"><table><thead><tr><th>Rank / roof address</th><th>Footprint m²</th><th>Yield kWh/kW/yr</th><th>Capacity kW</th><th>Energy kWh/yr</th><th>Data coverage</th></tr></thead><tbody id="roof-rows"></tbody></table></div></details><p id="no-roofs" hidden>No candidate roofs met the minimum area of 10 m² in this search.</p></details>
-<details class="card plotted-panel-report result-section"><summary class="roof-section-summary">About the plotted solar panels <span>Expand / collapse</span></summary><div class="section-body"><p id="plotted-panel-summary"></p><div id="plotted-roofs"></div><p class="hint">Blue rectangles represent proposed modules; green outlines represent candidate roofs. The planner prioritizes average energy per panel, while the roof ranking compares total potential energy. Layouts use average roof sunlight and do not detect existing panels, obstructions, slope, or required setbacks.</p></div></details><details class="card search-report result-section"><summary class="roof-section-summary">Search findings and next steps <span>Expand / collapse</span></summary><div class="section-body"><h3>Search findings</h3><p id="findings"></p><h3>Next steps</h3><p id="next-steps"></p><p class="hint">Roof addresses are suggested Google reverse-geocoding matches. Nearby matches are marked approximate. Looking up addresses makes additional Geocoding API requests.</p></div></details><details class="card method result-section"><summary class="roof-section-summary">What these results mean <span>Expand / collapse</span></summary><div class="section-body"><p id="assumptions"></p><p>Detection uses Google’s rooftop mask and connected regions. Touching roofs may merge. These are screening estimates using horizontal footprint area; they don’t assess roof condition, slope, setbacks, or installation readiness. Missing sunlight data is excluded from the energy estimate. A “partial” flag means the roof reaches the search boundary.</p></div></details>
+          <details id="panel-comparison-section" class="card result-section comparison-section" open hidden>
+            <summary class="roof-section-summary">Side-by-side comparison <span>Choose two models</span></summary>
+            <div class="section-body"><p class="hint">Both options use the same included roofs, budget scope, energy target, and area cap. Preview one to update the map. Your PDF includes both comparison choices.</p><div class="comparison-pickers"><div><label for="compare-a">Option A</label><select id="compare-a"></select></div><div><label for="compare-b">Option B</label><select id="compare-b"></select></div></div><p class="hint comparison-scroll-hint">Scroll horizontally to view both options.</p><div class="table-scroll" tabindex="0" aria-label="Panel comparison; scroll horizontally to view both options"><table id="panel-comparison-table" class="panel-comparison-table"></table></div><div id="panel-comparison-reasons" class="comparison-reasons"></div></div>
+          </details>
+          <details id="roof-results" class="card table-card result-section" open><summary class="roof-section-summary">Roof candidates <span>Ranked by total potential</span></summary><div class="table-heading"><div><p class="hint">Roof potential covers the footprint within your radius; it differs from the selected panel layout.</p></div><div><button id="lookup-addresses" class="secondary" type="button">Look up roof addresses</button><a id="csv-export" class="text-link">CSV ↓</a><a id="geojson-export" class="text-link">GeoJSON ↓</a></div></div>
+          <details id="roof-selection-section" class="roof-selection-controls" hidden><summary id="roof-selection-summary">Choose roofs for this plan</summary><p class="hint">Uncheck buildings you do not want to use. Recommendations and the map update automatically; gray outlines remain visible for reference. Roof selection does not verify ownership.</p><div id="roof-selection-options"></div><button id="include-all-roofs" type="button" class="secondary">Include all roofs</button></details>
+            <div id="roof-accordions" class="roof-accordions"></div><details class="comparison"><summary>Compare all roofs in a table</summary><div class="table-scroll" tabindex="0" aria-label="Roof comparison"><table><thead><tr><th>Rank / roof address</th><th>Footprint m²</th><th>Yield kWh/kW/yr</th><th>Capacity kW</th><th>Energy kWh/yr</th><th>Data coverage</th></tr></thead><tbody id="roof-rows"></tbody></table></div></details><p id="no-roofs" hidden>No candidate roofs met the minimum area of 10 m² in this search.</p>
+          </details>
+          <details id="methodology" class="card method result-section"><summary class="roof-section-summary">Methodology &amp; assumptions <span>Findings, placement &amp; data notes</span></summary>
+            <div class="section-body"><p id="result-meta" class="hint"></p><a id="json-export" class="text-link">Full analysis (JSON) ↓</a></div>
+            <details id="placement-section" class="plotted-panel-report comparison"><summary>Why these panel locations?</summary><div class="section-body"><p id="placement-explanation"></p><details class="placement-breakdown"><summary>Panel totals and roof-by-roof reasoning</summary><p id="plotted-panel-summary"></p><div id="plotted-roofs"></div></details><p class="hint">Blue rectangles represent proposed modules; green outlines represent candidate roofs. The planner prioritizes average energy per panel, while the roof ranking compares total potential energy. Layouts use average roof sunlight and do not detect existing panels, obstructions, slope, or required setbacks.</p></div></details>
+            <details id="plan-section" class="proposal-card comparison"><summary>Selected layout &amp; cost assumptions</summary><div class="section-body"><div class="proposal-metrics"><div><span>Proposed panels</span><strong id="panel-count">—</strong></div><div><span>Installed estimate (USD)</span><strong id="plan-cost">—</strong></div><div><span>Annual output (kWh)</span><strong id="plan-energy">—</strong></div></div><p id="plan-status" role="status"></p><p id="plan-notes" class="hint"></p><p id="recommendation-context" class="hint"></p><p id="recommendation-excluded" class="hint"></p><p id="recommendation-notes" class="hint"></p></div></details>
+            <details class="overview-section comparison"><summary>Whole search area totals</summary><div class="section-body"><div class="metrics"><div><span>Candidate roofs</span><strong id="roof-count">—</strong></div><div><span>Total roof potential</span><strong id="total-energy">—</strong><small>kWh / year · all candidates</small></div><div><span>Sunlight data coverage</span><strong id="coverage">—</strong></div></div></div></details>
+            <details class="search-report comparison"><summary>Search findings &amp; next steps</summary><div class="section-body"><h3>Search findings</h3><p id="findings"></p><h3>Next steps</h3><p id="next-steps"></p><p class="hint">Roof addresses are suggested Google reverse-geocoding matches. Nearby matches are marked approximate. Looking up addresses makes additional Geocoding API requests.</p></div></details>
+            <div class="section-body"><h3>Data &amp; limitations</h3><p id="assumptions"></p><p>Detection uses Google’s rooftop mask and connected regions. Touching roofs may merge. These are screening estimates using horizontal footprint area; they don’t assess roof condition, slope, setbacks, or installation readiness. Missing sunlight data is excluded from the energy estimate. A “partial” flag means the roof reaches the search boundary. Imagery date and attribution appear beneath the map.</p></div>
+          </details>
         </div>
       </section>
     </div>
   </main>
-  <footer>RoofReady · A starting point for better solar decisions.</footer>
+  <footer>RoofReady · Solar estimates for planning. Verify your layout with an installer.</footer>
+  <div id="loading-screen" class="loading-screen" role="dialog" aria-modal="true" aria-labelledby="loading-title" aria-describedby="loading-message" tabindex="-1" hidden>
+    <div class="loading-card"><div class="loading-brand"><img src="/static/roofready-mark.svg" width="48" height="48" alt=""><span>RoofReady</span></div>
+      <div class="loading-track" aria-hidden="true"><span></span></div>
+      <h2 id="loading-title">Checking your search area</h2><p id="loading-area"></p><p id="loading-message" role="status" aria-live="polite">Preparing your analysis…</p>
+      <ol id="loading-steps"><li data-stage="0">Locate the address</li><li data-stage="1">Load aerial and sunlight data</li><li data-stage="2">Find candidate roofs</li><li data-stage="3">Compare panels and layouts</li></ol>
+      <div class="loading-footer"><span id="loading-elapsed">Elapsed: 0:00</span><button id="loading-background" type="button">Continue in background</button></div>
+    </div>
+  </div>
 </body>
 </html>

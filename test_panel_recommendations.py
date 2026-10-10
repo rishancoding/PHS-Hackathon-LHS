@@ -44,6 +44,34 @@ class RecommendationTests(unittest.TestCase):
         self.assertEqual(warranty['proposal']['panel_model']['model_id'], 'compact')
         self.assertTrue(any('10-year product warranty' in r for r in warranty['panel_recommendations']['recommendations'][0]['reasons']))
 
+    def test_changing_models_scales_physical_dimensions_at_each_image_resolution(self):
+        catalog = [model('small', width=.5, height=1), model('large', watts=200, width=1.25, height=2.1)]
+        for resolution in (.25, .5, 2):
+            data = fixture()
+            data['analysis']['resolution_m'] = resolution
+            data['roofs'][0]['properties']['area_m2'] = 400 * resolution ** 2
+            layouts = []
+            for chosen in catalog:
+                with self.subTest(resolution=resolution, model=chosen['model_id']):
+                    result = build_recommendations(data, 10000, 1000, selected_model_id=chosen['model_id'], catalog=catalog)
+                    plan = result['proposal']
+                    self.assertGreater(plan['panel_count'], 0)
+                    self.assertEqual(plan['panel_model']['model_id'], chosen['model_id'])
+                    expected = sorted((chosen['width_m'], chosen['height_m']))
+                    for panel in plan['panels']:
+                        polygon = shape(panel['preview_geometry'])
+                        left, top, right, bottom = polygon.bounds
+                        physical = sorted(((right-left)*resolution, (bottom-top)*resolution))
+                        for actual, dimension in zip(physical, expected):
+                            self.assertAlmostEqual(actual, dimension)
+                        self.assertAlmostEqual(panel['width_m'], (right-left)*resolution)
+                        self.assertAlmostEqual(panel['height_m'], (bottom-top)*resolution)
+                        self.assertAlmostEqual(polygon.area * resolution**2, chosen['width_m']*chosen['height_m'])
+                        self.assertEqual(panel['model_id'], chosen['model_id'])
+                        self.assertTrue(shape(data['roofs'][0]['preview_geometry']).covers(polygon))
+                    layouts.append(plan['panels'][0]['preview_geometry'])
+            self.assertNotEqual(layouts[0], layouts[1])
+
     def test_tiers_and_constraints_override_warranty_preference(self):
         catalog = [model('affordable'), model('premium', watts=200, price=100, warranty=10)]
         result = build_recommendations(fixture(), 1000, 300, priority='longer_warranty', catalog=catalog)

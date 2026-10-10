@@ -148,6 +148,13 @@ class DashboardTests(unittest.TestCase):
                 result = changed.get_json()
                 self.assertEqual(result["proposal"]["panel_model"]["model_id"], chosen["model"]["model_id"])
                 self.assertLessEqual(result["proposal"]["panel_area_used_m2"], 10)
+                model = result["proposal"]["panel_model"]
+                resolution = result["analysis"]["resolution_m"]
+                for panel in result["proposal"]["panels"]:
+                    x0, y0, x1, y1 = shape(panel["preview_geometry"]).bounds
+                    for actual, expected in zip(sorted(((x1-x0)*resolution, (y1-y0)*resolution)),
+                                                sorted((model["width_m"], model["height_m"]))):
+                        self.assertAlmostEqual(actual, expected)
                 self.assertTrue(all(panel["model_id"] == chosen["model"]["model_id"] for panel in result["proposal"]["panels"]))
                 invalid = client.post(f"/api/plan/{job}", headers=origin, json={
                     "budget_usd": 2000, "energy_target_kwh_year": 10000, "selected_model_id": "goalzero-13007"})

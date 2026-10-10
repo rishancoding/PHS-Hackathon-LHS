@@ -1,6 +1,7 @@
 """Local RoofReady dashboard. Run with .venv/bin/python roofready_app.py."""
 
 import argparse
+from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor
 import math
 import json
@@ -9,12 +10,14 @@ from pathlib import Path
 import secrets
 from threading import Lock
 
-from flask import Flask, abort, jsonify, render_template, request, send_from_directory
+from flask import Flask, abort, jsonify, render_template, request, send_from_directory, send_file
 
+from address_autocomplete import address_predictions
 from demo_roofready import run_demo
 from process_solar_layers import run_pipeline
 from solar_address import DEFAULT_API_KEY, InputError, radius_in_meters
 from panel_recommendations import build_recommendations, validate_recommendation_inputs, load_catalog
+from solar_report import create_pdf_report
 from roof_details import add_roof_addresses, describe_results, save_report
 
 ROOT = Path(__file__).resolve().parent
@@ -51,6 +54,33 @@ def create_app(output_root=None):
         key = os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
         return render_template("index.html", configured=bool(key))
 
+    @app.post("/api/address-suggestions")
+    def suggest_addresses():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or not isinstance(body.get("query"), str):
+            return jsonify(error="Enter an address search."), 400
+        query = body["query"].strip()
+        if not 3 <= len(query) <= 200:
+            return jsonify(error="Type between 3 and 200 characters."), 400
+        supplied = body.get("api_key", "")
+        if not isinstance(supplied, str):
+            return jsonify(error="API key must be text."), 400
+        with lock:
+            recent = list(dict.fromkeys(
+                job["result"]["request"]["address"] for job in reversed(list(jobs.values()))
+                if job["status"] == "complete" and not job["result"].get("demo")
+                and query.casefold() in job["result"]["request"]["address"].casefold()))[:5]
+        fallback = [{"address": address, "label": address, "detail": "Previously analyzed", "source": "recent"}
+                    for address in recent]
+        key = supplied.strip() or os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
+        if not key:
+            return jsonify(suggestions=fallback, notice="Type a full address, or configure your Google key for live suggestions.")
+        try:
+            suggestions = address_predictions(query, key)
+            return jsonify(suggestions=suggestions or fallback, notice="" if suggestions or fallback else "No matches. Try adding your city or ZIP code.")
+        except InputError as exc:
+            return jsonify(suggestions=fallback, notice=str(exc))
+
     def execute(job_id, body, key):
         def progress(message):
             with lock:
@@ -64,6 +94,7 @@ def create_app(output_root=None):
                 result = run_pipeline(body["address"], body["radius"], body["unit"], key,
                                       directory, progress=progress, usable_fraction=body["usable_fraction"],
                                       panel_kw_per_m2=body["panel_kw_per_m2"])
+            progress("Comparing panel models and building your layout…")
             build_recommendations(result, **body["plan_inputs"])
             save_report(result, directory)
             with lock:
@@ -145,13 +176,28 @@ def create_app(output_root=None):
                 abort(404)
             result = dict(job["result"])
         try:
-            build_recommendations(result, **inputs)
+            build_recommendations(result, **inputs, reuse_comparison=True)
         except InputError as exc:
             return jsonify(error=str(exc)), 400
         save_report(result, output_root / job_id)
         with lock:
             jobs[job_id]["result"] = result
         return jsonify(result)
+
+    @app.get("/api/report/<job_id>")
+    def pdf_report(job_id):
+        with lock:
+            job = jobs.get(job_id)
+            if not job or job["status"] != "complete":
+                abort(404)
+            result = deepcopy(job["result"])
+        try:
+            models = request.args.getlist("model")
+            output = create_pdf_report(result, output_root / job_id, models)
+        except InputError as exc:
+            return jsonify(error=str(exc)), 400
+        return send_file(output, mimetype="application/pdf", as_attachment=True,
+                         download_name=f"roofready-{job_id}.pdf", max_age=0)
 
     @app.post("/api/addresses/<job_id>")
     def resolve_saved_addresses(job_id):
