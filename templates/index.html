@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RoofReady — neighborhood solar screening</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header><a class="brand" href="/">☀ <span>RoofReady</span></a><span class="header-note">NEIGHBORHOOD SOLAR SCREENING</span><span class="pill">Local workspace</span></header>
+  <main>
+    <section class="intro"><p class="eyebrow">START WITH A PLACE. FIND THE POTENTIAL.</p><h1>A clearer view of<br>your neighborhood’s solar future.</h1><p>Explore rooftops within a radius. Compare estimated solar yield.<br>Find the places worth a closer look.</p></section>
+    <div class="workspace">
+      <aside class="card"><div class="section-title"><span class="step">01</span><h2>Set your search area</h2></div>
+        <form id="analysis-form">
+          <label for="address">Street address</label><input id="address" name="address" required placeholder="Street, city, state, ZIP" value="1600 Amphitheatre Parkway, Mountain View, CA 94043">
+          <div class="input-row"><div><label for="radius">Radius</label><input id="radius" name="radius" type="number" min="0.01" step="any" value="100" required></div><div><label for="unit">Unit</label><select id="unit" name="unit"><option value="meters">Meters</option><option value="feet">Feet</option></select></div></div>
+          <p class="hint">Lower 48 states + DC · Up to 1,000 m</p>
+          <label for="budget">Installation budget (USD)</label><input id="budget" type="number" min="0.01" step="any" value="25000" required>
+          <label for="energy-target">Energy output needed (kWh / year)</label><input id="energy-target" type="number" min="0.01" step="any" value="10000" required>
+          <label for="cost-per-watt">Assumed installed cost (USD / watt)</label><input id="cost-per-watt" type="number" min="0.01" step="any" value="3" required>
+          <p class="hint">Cost is an editable planning assumption, not a price quote. Energy is annual output, not instantaneous power.</p>
+          <details><summary>Estimation assumptions</summary><label for="usable">Usable roof fraction</label><input id="usable" type="number" min="0.01" max="1" step="0.01" value="0.65"><label for="density">Panel capacity (kW/m²)</label><input id="density" type="number" min="0.01" max="1" step="0.01" value="0.20"><p class="hint">Footprint area × usable fraction × panel density × Google annual yield.</p></details>
+          <details {% if not configured %}open{% endif %}><summary>Google API key {% if configured %}· configured{% endif %}</summary><label for="api-key">Key for this analysis</label><input id="api-key" type="password" autocomplete="off" placeholder="{% if configured %}Optional override{% else %}Paste your API key{% endif %}"><p class="hint">Used by the local Python server. Not saved in results.</p></details>
+          <button id="analyze" type="submit" class="primary">Analyze rooftops <span>↗</span></button>
+          <p class="hint">Uses Google Geocoding and Solar APIs. Requests may incur charges.</p>
+        </form>
+        <div class="demo"><p>Take a look before you search</p><button id="demo-button" type="button" class="secondary">Explore a synthetic demo</button></div>
+        <div id="history-wrap" hidden><label for="history">Open a saved analysis</label><select id="history"><option value="">Choose an analysis</option></select></div>
+      </aside>
+      <section class="results">
+        <div id="status" role="status" aria-live="polite">Ready when you are. Enter an address or explore the demo.</div>
+        <div id="error" role="alert" hidden></div>
+        <div id="empty" class="card empty"><div class="empty-icon">⌖</div><h2>Your search starts here</h2><p>We’ll bring together aerial imagery, candidate roof outlines,<br>and estimated annual solar energy for your area.</p><div class="flow"><span>Address</span>→<span>Solar layers</span>→<span>Candidate roofs</span>→<span>Ranked results</span></div></div>
+        <div id="result-content" hidden>
+          <div class="result-heading"><div><span id="source-badge" class="eyebrow"></span><h2 id="result-address"></h2><p id="result-meta" class="hint"></p></div><a id="json-export" class="text-link">Download analysis ↗</a></div>
+          <div class="metrics"><div class="card"><span>Candidate roofs</span><strong id="roof-count">—</strong></div><div class="card"><span>Total estimated energy</span><strong id="total-energy">—</strong><small>kWh / year</small></div><div class="card"><span>Sunlight data coverage</span><strong id="coverage">—</strong></div></div>
+          <div class="card proposal-card"><div class="table-heading"><h3>Your proposed solar plan</h3><button id="replan" class="secondary" type="button">Update budget / target</button></div><div class="proposal-metrics"><div><span>Proposed panels</span><strong id="panel-count">—</strong></div><div><span>Estimated installed cost</span><strong id="plan-cost">—</strong></div><div><span>Estimated output (kWh/year)</span><strong id="plan-energy">—</strong></div></div><p id="plan-status" role="status"></p><p id="plan-notes" class="hint"></p></div>
+          <div class="card map-card"><div class="map-toolbar"><h3>Explore the area</h3><div><label class="toggle"><input id="heat-toggle" type="checkbox"> Sunlight</label><button id="zoom-out" type="button" aria-label="Zoom out">−</button><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="reset-map" type="button">Reset</button></div></div><p class="zoom-hint hint">Scroll or pinch to zoom · drag to pan · double-click to zoom in</p><div class="map-wrap"><svg id="roof-map" role="img" aria-label="Aerial image and selectable candidate roof outlines"><title>Candidate roof map</title><image id="aerial"/><image id="sunlight" visibility="hidden"/><g id="outlines"></g><g id="proposed-panels"></g><g id="center-marker"><circle r="5" fill="#fff" stroke="#183f32" stroke-width="2"/><circle r="1.5" fill="#183f32"/></g></svg></div><div class="map-footer"><span><i></i> Green: candidate roof · blue: proposed panel</span><span>Imagery: Google Solar API <span id="imagery-date"></span></span></div></div>
+          <div id="selected-roof" class="card selected-roof" hidden><h3 id="selected-address"></h3><p id="selected-roof-info" class="hint"></p></div><details id="roof-results" class="card table-card" open><summary class="roof-section-summary">Ranked roof candidates <span>Expand / collapse</span></summary><div class="table-heading"><div><h3>Rooftops, ranked by potential</h3><p class="hint">Estimated energy for the roof portion within your radius</p></div><div><button id="lookup-addresses" class="secondary" type="button">Look up roof addresses</button><a id="csv-export" class="text-link">CSV ↓</a><a id="geojson-export" class="text-link">GeoJSON ↓</a></div></div><div id="roof-accordions" class="roof-accordions"></div><details class="comparison"><summary>Compare all roofs in a table</summary><div class="table-scroll"><table><thead><tr><th>Rank / roof address</th><th>Footprint m²</th><th>Yield kWh/kW/yr</th><th>Capacity kW</th><th>Energy kWh/yr</th><th>Data coverage</th></tr></thead><tbody id="roof-rows"></tbody></table></div></details><p id="no-roofs" hidden>No candidate roofs met the minimum area of 10 m² in this search.</p></details>
+<section class="card plotted-panel-report"><h3>About the plotted solar panels</h3><p id="plotted-panel-summary"></p><div id="plotted-roofs"></div><p class="hint">Blue rectangles represent proposed modules; green outlines represent candidate roofs. The planner prioritizes average energy per panel, while the roof ranking compares total potential energy. Layouts use average roof sunlight and do not detect existing panels, obstructions, slope, or required setbacks.</p></section><div class="card search-report"><h3>Search findings</h3><p id="findings"></p><h3>Next steps</h3><p id="next-steps"></p><p class="hint">Roof addresses are suggested Google reverse-geocoding matches. Nearby matches are marked approximate. Looking up addresses makes additional Geocoding API requests.</p></div><div class="method"><h3>What these results mean</h3><p id="assumptions"></p><p>Detection uses Google’s rooftop mask and connected regions. Touching roofs may merge. These are screening estimates using horizontal footprint area; they don’t assess roof condition, slope, setbacks, or installation readiness. Missing sunlight data is excluded from the energy estimate. A “partial” flag means the roof reaches the search boundary.</p></div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <footer>RoofReady · A starting point for better solar decisions.</footer>
+</body>
+</html>
