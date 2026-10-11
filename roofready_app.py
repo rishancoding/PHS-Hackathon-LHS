@@ -10,6 +10,7 @@ from pathlib import Path
 import secrets
 from threading import Lock
 import time
+import traceback
 
 from flask import Flask, abort, jsonify, render_template, request, send_from_directory, send_file
 
@@ -33,13 +34,15 @@ def create_app(output_root=None):
     executor = ThreadPoolExecutor(max_workers=1)
     # Previously completed CLI/dashboard runs can be opened without another API call.
     if output_root.exists():
-        for folder in output_root.iterdir():
-            if not folder.is_dir() or not (folder / "results.json").is_file():
-                continue
+        # Oldest first, so the saved-search list (newest first) reflects real run order.
+        saved = sorted((folder for folder in output_root.iterdir() if (folder / "results.json").is_file()),
+                       key=lambda folder: (folder / "results.json").stat().st_mtime)
+        for folder in saved:
             try:
                 result = json.loads((folder / "results.json").read_text())
                 if "roofs" in result and "summary" in result and "request" in result:
                     describe_results(result)
+                    result.setdefault("completed_at", time.strftime("%Y-%m-%dT%H:%M", time.localtime((folder / "results.json").stat().st_mtime)))
                     jobs[folder.name] = {"status": "complete", "message": "Saved analysis loaded", "result": result}
             except (ValueError, OSError):
                 continue
@@ -93,15 +96,21 @@ def create_app(output_root=None):
             else:
                 result = run_pipeline(body["address"], body["radius"], body["unit"], key,
                                       directory, progress=progress, usable_fraction=body["usable_fraction"],
-                                      panel_kw_per_m2=body["panel_kw_per_m2"])
+                                      panel_kw_per_m2=body["panel_kw_per_m2"], saved_root=output_root,
+                                      reuse_imagery=body.get("reuse_imagery") is not False)
             progress("Comparing panel models and building your layout…")
             build_recommendations(result, **body["plan_inputs"])
             result["search_seconds"] = round(time.monotonic() - started, 1)
+            result["completed_at"] = time.strftime("%Y-%m-%dT%H:%M")
             save_report(result, directory)
             with lock:
                 jobs[job_id].update(status="complete", message="Analysis complete", result=result)
         except Exception as exc:
             message = str(exc).replace(key, "[redacted]") if key else str(exc)
+            if not isinstance(exc, InputError):
+                # Full traceback in the terminal for debugging; the key never reaches the log.
+                details = traceback.format_exc()
+                app.logger.error("Analysis %s failed:\n%s", job_id, details.replace(key, "[redacted]") if key else details)
             # Unexpected errors can include local paths or download URLs; show a stable message.
             if not isinstance(exc, InputError):
                 message = "Raster processing failed. Check the downloaded TIFFs or try a smaller radius."
@@ -156,11 +165,21 @@ def create_app(output_root=None):
 
     @app.get("/api/history")
     def history():
+        # Newest first; one entry per address and radius.
+        runs, seen = [], set()
         with lock:
-            return jsonify([
-                {"job_id": job_id, "address": search_address(job["result"]["request"]), "demo": job["result"].get("demo", False)}
-                for job_id, job in reversed(list(jobs.items())) if job["status"] == "complete"
-            ])
+            for job_id, job in reversed(list(jobs.items())):
+                if job["status"] != "complete":
+                    continue
+                result = job["result"]
+                address = search_address(result["request"])
+                identity = (address, round(result["request"].get("radius_meters", 0), 1), result.get("demo", False))
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                runs.append({"job_id": job_id, "address": address, "demo": result.get("demo", False),
+                             "radius_meters": result["request"].get("radius_meters"), "completed_at": result.get("completed_at")})
+        return jsonify(runs)
 
     @app.post("/api/plan/<job_id>")
     def replan(job_id):
@@ -225,6 +244,8 @@ def create_app(output_root=None):
                 save_report(result, output_root / job_id)
                 message = "Roof address lookup complete"
             except Exception:
+                details = traceback.format_exc()
+                app.logger.error("Address lookup for %s failed:\n%s", job_id, details.replace(key, "[redacted]") if key else details)
                 message = "Address lookup could not finish; previous results retained."
                 with lock:
                     result.update(jobs[job_id]["result"])

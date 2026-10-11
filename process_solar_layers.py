@@ -2,8 +2,11 @@
 
 import argparse
 import getpass
+import json
 import math
 import os
+import shutil
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -264,18 +267,81 @@ def process_layers(paths, request, directory, usable_fraction=0.65, panel_kw_per
     return result
 
 
-def run_pipeline(address, radius, unit, api_key, directory, progress=lambda message: None, **options):
+def find_saved_layers(output_root, request, exclude=None):
+    """Most recent saved run with the same center, radius and pixel size, if its four layers exist."""
+    output_root = Path(output_root)
+    if not output_root.is_dir():
+        return None
+    key = (round(request["latitude"], 6), round(request["longitude"], 6), round(request["radius_meters"], 3),
+           request["solar_parameters"]["pixelSizeMeters"])
+    matches = []
+    for results_file in output_root.glob("*/results.json"):
+        folder = results_file.parent
+        if folder == exclude or not all((folder / "layers" / f"{name}.tif").is_file() for name in LAYERS):
+            continue
+        try:
+            saved = json.loads(results_file.read_text())
+            saved_request = saved["request"]
+            saved_key = (round(saved_request["latitude"], 6), round(saved_request["longitude"], 6),
+                         round(saved_request["radius_meters"], 3), saved_request["solar_parameters"]["pixelSizeMeters"])
+        except (ValueError, KeyError, TypeError, OSError):
+            continue
+        if saved_key == key and not saved.get("demo"):
+            matches.append((results_file.stat().st_mtime, folder, saved.get("imagery") or {}))
+    return max(matches, key=lambda match: match[0]) if matches else None
+
+
+def reuse_layers(source, directory):
+    """Give the new run its own copy of saved layers (hard links when possible)."""
+    target = Path(directory) / "layers"
+    target.mkdir(parents=True, exist_ok=True)
+    paths = {}
+    for name in LAYERS:
+        source_file, target_file = Path(source) / "layers" / f"{name}.tif", target / f"{name}.tif"
+        if not target_file.exists():
+            try:
+                os.link(source_file, target_file)
+            except OSError:
+                shutil.copy2(source_file, target_file)
+        paths[name] = target_file
+    return paths
+
+
+def request_layers(request, api_key):
+    """Ask for HIGH-quality layers, falling back once to MEDIUM where Google has no HIGH coverage."""
+    parameters = {**request["solar_parameters"], "key": api_key}
+    try:
+        return get_json(SOLAR_URL, parameters)
+    except InputError as exc:
+        if "HTTP 404" not in str(exc):
+            raise
+    request["solar_parameters"]["requiredQuality"] = "MEDIUM"
+    return get_json(SOLAR_URL, {**request["solar_parameters"], "key": api_key})
+
+
+def run_pipeline(address, radius, unit, api_key, directory, progress=lambda message: None,
+                 reuse_imagery=True, saved_root=None, **options):
     if not api_key:
         raise InputError("Set GOOGLE_MAPS_API_KEY or supply a key in the dashboard.")
     progress("Finding the address coordinates…")
     request = prepare_request(address, radius, unit, api_key)
-    progress("Requesting regional solar data…")
     # Only the layers used by this pipeline, avoiding unused monthly/hourly downloads.
     request["solar_parameters"]["view"] = "IMAGERY_AND_ANNUAL_FLUX_LAYERS"
-    data = get_json(SOLAR_URL, {**request["solar_parameters"], "key": api_key})
-    paths = download_layers(data, api_key, Path(directory) / "layers", progress)
+    directory = Path(directory)
+    saved = find_saved_layers(saved_root or directory.parent, request, exclude=directory) if reuse_imagery else None
+    if saved:
+        saved_time, folder, imagery = saved
+        progress("Using saved imagery for this address…")
+        paths = reuse_layers(folder, directory)
+        imagery = {**imagery, "reused_from": time.strftime("%Y-%m-%d %H:%M", time.localtime(saved_time))}
+        request["solar_parameters"]["requiredQuality"] = imagery.get("imageryQuality") or request["solar_parameters"]["requiredQuality"]
+    else:
+        progress("Requesting regional solar data…")
+        data = request_layers(request, api_key)
+        paths = download_layers(data, api_key, directory / "layers", progress)
+        imagery = {key: data.get(key) for key in ("imageryDate", "imageryProcessedDate", "imageryQuality")}
     result = process_layers(paths, request, directory, progress=progress, **options)
-    result["imagery"] = {key: data.get(key) for key in ("imageryDate", "imageryProcessedDate", "imageryQuality")}
+    result["imagery"] = imagery
     save_report(result, directory)
     return result
 

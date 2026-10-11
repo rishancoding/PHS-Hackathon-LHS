@@ -59,7 +59,7 @@ async function analyze(demo=false) {
   const newSearchInputs={...planInputs(), excluded_roof_ids:[], blocked_zones:[]};
   const payload = demo ? {demo:true, ...newSearchInputs} : {
     address:$('address').value.trim(), radius:Number($('radius').value), unit:$('unit').value,
-    usable_fraction:Number($('usable').value), panel_kw_per_m2:Number($('density').value), api_key:$('api-key').value, ...newSearchInputs
+    usable_fraction:Number($('usable').value), panel_kw_per_m2:Number($('density').value), reuse_imagery:$('reuse-imagery').checked, api_key:$('api-key').value, ...newSearchInputs
   };
   try {
     const response=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
@@ -71,11 +71,20 @@ async function analyze(demo=false) {
   } catch(e) { error(e.message); }
   finally { busy(false);window.roofreadyLoading.finish(); }
 }
+// Status checks ride out brief network blips (three retries with backoff) before giving up.
+async function jobStatus(job){
+  for(let attempt=0;attempt<4;attempt++){
+    let response=null;
+    try{response=await fetch(`/api/jobs/${job}`);}catch(e){/* network blip: retry below */}
+    if(response?.ok)return response.json();
+    if(response?.status===404)throw new Error('This analysis is no longer available.');
+    if(attempt<3)await new Promise(resolve=>setTimeout(resolve,500*2**attempt));
+  }
+  throw new Error('Lost contact with the local server. Check that it is still running.');
+}
 async function poll(job,preserveView=false) {
   while(true) {
-    const response=await fetch(`/api/jobs/${job}`);
-    if(!response.ok) throw new Error('Could not read analysis status.');
-    const state=await response.json(); window.roofreadyLoading.update(state.message);
+    const state=await jobStatus(job); window.roofreadyLoading.update(state.message);
     if(state.status==='failed') throw new Error(state.message);
     if(state.status==='complete') { render(state.result,job,preserveView); toast(''); await loadHistory(); return; }
     await new Promise(resolve=>setTimeout(resolve,400));
@@ -195,9 +204,11 @@ function render(result,job,preserveView=false) {
   $('next-steps').textContent=result.report?.next_steps || 'Verify roof addresses and usable area with a qualified solar installer before proceeding.';
   const a=result.assumptions;
   $('assumptions').textContent=`Assumptions: ${format(a.usable_roof_fraction*100)}% usable footprint · ${a.panel_kw_per_m2} kW/m² panel capacity · ${a.minimum_roof_area_m2} m² minimum candidate area. Ranked by estimated annual energy.`;
-  const date=result.imagery?.imageryDate;
-  $('imagery-date').textContent=date ? `· ${date.year}-${date.month}-${date.day}` : '';
-  $('imagery-source').textContent=result.demo ? 'Synthetic imagery' : 'Imagery: Google Solar API';
+  const imagery=result.imagery || {}, date=imagery.imageryDate;
+  $('imagery-date').textContent=[date ? `${date.year}-${String(date.month).padStart(2,'0')}` : '',
+    imagery.imageryQuality && imagery.imageryQuality!=='HIGH' ? `${imagery.imageryQuality.toLowerCase()} quality` : '',
+    imagery.reused_from ? 'saved copy' : ''].filter(Boolean).map(text=>` · ${text}`).join('');
+  $('imagery-source').textContent=result.demo ? 'Synthetic imagery' : 'Imagery © Google';
 }
 function renderProposal(proposal) {
   renderPlottedPanelReport(proposal);
@@ -406,7 +417,8 @@ async function loadHistory() {
     const runs=await response.json();
     window.roofreadyAddress?.setRecent(runs.filter(run=>!run.demo).map(run=>run.address));
     $('history').replaceChildren(new Option('Choose an analysis',''));
-    for(const run of runs) $('history').append(new Option(`${run.demo?'Demo · ':''}${run.address}`,run.job_id));
+    const when=value=>value ? new Date(value).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+    for(const run of runs) $('history').append(new Option([run.demo?'Sample area':run.address,run.radius_meters?`${format(run.radius_meters)} m`:'',when(run.completed_at)].filter(Boolean).join(' · '),run.job_id));
     $('history-wrap').hidden=runs.length===0;
   } catch(e) { /* Search remains usable if saved analysis listing is unavailable. */ }
 }
