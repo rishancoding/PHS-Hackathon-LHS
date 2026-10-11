@@ -16,3 +16,11 @@ services:
         value: /tmp/photogrid-outputs
       - key: GOOGLE_MAPS_API_KEY
         value: ""
+      # Secrets: Render asks for these when the Blueprint is first created and never
+      # stores them in this file. Add them on the service's Environment page later.
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: photogrid

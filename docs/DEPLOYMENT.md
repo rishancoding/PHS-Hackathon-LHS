@@ -25,16 +25,19 @@ Your local `.env` stays ignored and is not uploaded. The Blueprint leaves
 key in the existing input; it is used for that request and excluded from saved
 results and reports. Do not put your personal key into the shared public demo.
 
-To enable saved projects on Render, set **MONGODB_URI** as a secret environment
-variable and **MONGODB_DATABASE** to `photogrid`, and allow the service's outbound
-IP addresses in Atlas. Keep the URI out of the Blueprint and Git. Atlas retains
-planning snapshots across redeploys; aerial files still depend on the service's
-file storage. This is a shared demo, so visitors can see the saved projects.
+When you first deploy the Blueprint, Render asks for **DEEPSEEK_API_KEY** (solar
+advisor) and **MONGODB_URI** (saved projects). `render.yaml` marks both
+`sync: false`, so their values stay in Render and never enter the Blueprint or Git;
+it sets `MONGODB_DATABASE=photogrid` for you. Render only asks during that first
+creation: for a Blueprint that already exists, add or change these keys on the
+`photogrid` service's **Environment** page.
 
-To enable the solar advisor on Render, set **DEEPSEEK_API_KEY** as a secret
-environment variable; keep it out of the Blueprint and Git. Visitors' questions are
-billed to that DeepSeek account, and the server allows 20 questions a minute across
-all visitors.
+For saved projects, also allow the service's outbound IP addresses in Atlas. Atlas
+retains planning snapshots across redeploys; aerial files still depend on the
+service's file storage. This is a shared demo, so visitors can see the saved projects.
+
+Advisor questions are billed to the DeepSeek account behind the key, and the server
+allows 20 questions a minute across all visitors.
 
 This is a shared hackathon demo: saved searches and reports are accessible to
 other visitors. Use the sample area or public addresses. The page shows this
