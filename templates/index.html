@@ -54,9 +54,9 @@
               <div class="map-footer"><span class="map-legend"><i class="roof-key"></i> Roofs <i class="panel-key"></i> New panels <i class="existing-key"></i> Existing panels <i class="zone-key"></i> No-panel zones</span><span><span id="imagery-source">Imagery © Google</span> <span id="imagery-date"></span></span></div>
               <div id="zone-panel" class="zone-panel" hidden>
                 <div class="zone-heading"><strong>No-panel zones</strong><span id="zone-status" class="hint" role="status" aria-live="polite"></span></div>
-                <p id="zone-help" class="hint">Drag on the map to mark areas without panels.</p>
+                <p id="zone-help" class="hint">Drag on the map to mark areas without panels. Remove a zone below, then Apply &amp; re-plan to allow panels there again.</p>
                 <ul id="zone-list" class="zone-list"></ul>
-                <div class="zone-actions"><button id="apply-zones" class="primary" type="button" disabled>Apply &amp; re-plan</button><button id="clear-zones" class="secondary" type="button" disabled>Clear</button><button id="zone-roof" class="secondary" type="button" disabled title="Select a roof first (click it or press Enter on it)">Zone over selected roof</button></div>
+                <div class="zone-actions"><button id="apply-zones" class="primary" type="button" disabled>Apply &amp; re-plan</button><button id="clear-zones" class="secondary" type="button" disabled>Remove all zones</button><button id="zone-roof" class="secondary" type="button" disabled title="Select a roof first (click it or press Enter on it)">Zone over selected roof</button></div>
               </div>
               <p id="panel-map-scale" class="hint map-scale" role="status" aria-live="polite"></p>
               <div id="selected-roof" class="selected-roof" hidden><h3 id="selected-address"></h3><p id="selected-roof-info" class="hint"></p></div>
@@ -65,7 +65,8 @@
               <div id="chosen-panel-art" class="chosen-panel-art"></div>
               <p id="chosen-panel-label" class="eyebrow">Panel on map</p><h2 id="chosen-panel-name">Choose a panel</h2><p id="chosen-panel-description" class="hint"></p>
               <dl class="key-values chosen-stats"><div><dt>Panels</dt><dd id="selected-count">—</dd></div><div><dt>Power each</dt><dd id="selected-power">—</dd></div><div><dt>Yearly output</dt><dd id="selected-energy">—</dd></div><div class="total"><dt>Installation cost</dt><dd id="selected-total-cost">—</dd></div></dl>
-              <div class="chosen-actions"><a id="compare-models" class="secondary" href="#panel-recommendation-section">Compare models</a><a id="chosen-panel-link" class="text-link" target="_blank" rel="noopener noreferrer" hidden>Specs ↗</a></div>
+              <div class="chosen-actions"><button id="compare-models" class="secondary" type="button" aria-expanded="false" aria-controls="quick-panel-options">Compare models</button><a id="chosen-panel-link" class="text-link" target="_blank" rel="noopener noreferrer" hidden>Specs ↗</a></div>
+              <section id="quick-panel-options" class="quick-panel-options" aria-labelledby="quick-panels-title" hidden><h3 id="quick-panels-title">Other top choices</h3><div id="quick-panel-list" role="list"></div><button id="see-more-panels" class="text-button" type="button">See more options →</button></section>
             </aside>
           </div>
         </div>

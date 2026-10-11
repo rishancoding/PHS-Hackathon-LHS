@@ -42,10 +42,10 @@ function renderZones() {
     item.append(label,remove); $('zone-list').append(item);
   }
   const dirty=zonesDirty();
-  $('zone-panel').hidden=!drawMode && draftZones.length===0;
+  $('zone-panel').hidden=!drawMode && draftZones.length===0 && !dirty;
   $('apply-zones').disabled=zoneBusy || !dirty || !currentJob; $('clear-zones').disabled=zoneBusy || draftZones.length===0;
   $('zone-roof').disabled=zoneBusy || !activeRoof;
-  $('zone-status').textContent=dirty ? 'Changes not applied yet' : '';
+  $('zone-status').textContent=dirty ? (draftZones.length ? 'Changes not applied yet' : 'All zones removed. Apply & re-plan to update the layout.') : '';
 }
 function setDrawMode(on) {
   drawMode=on && !!view; zoneStart=null; $('zone-draft')?.remove();
@@ -127,6 +127,7 @@ function renderAddressCallout(result){
   $('roof-list').hidden=pending && result.roofs.length>0;
 }
 function render(result,job,preserveView=false) {
+  if(zonesJob!==job){$('compare-models').setAttribute('aria-expanded','false');$('quick-panel-options').hidden=true;}
   currentResult=result; currentJob=job; activeRoof=null;
   // Keep unapplied drawings across other plan updates on the same analysis.
   const keepDrafts=zonesJob===job && zonesDirty();
@@ -283,7 +284,7 @@ function setPanelLink(link,url) {
 function renderRecommendations(data) {
   $('top-panels').replaceChildren();$('top-panels-note').textContent='';$('chosen-panel-art').replaceChildren();
   $('recommendation-excluded').textContent=''; $('recommendation-notes').textContent='';
-  $('chosen-panel-link').hidden=true;
+  $('chosen-panel-link').hidden=true;renderQuickPanels(data);
   if(!data){
     $('panel-comparison-section').hidden=true;comparisonIds=[];comparisonJob=currentJob;updatePdfLink();
     const model=currentResult?.proposal?.panel_model;
@@ -405,8 +406,8 @@ $('zone-roof').addEventListener('click',()=>{
 });
 $('apply-zones').addEventListener('click',async()=>{
   const zones=draftZones.map(zone=>[...zone]); setDrawMode(false);
-  if(await updatePlan(null,{blocked_zones:zones}))
-    toast(`Re-planned around ${zones.length} zone${zones.length===1?'':'s'}`);
+  if(await updatePlan(currentResult?.proposal?.panel_model?.model_id || null,{blocked_zones:zones}))
+    toast(zones.length ? `Re-planned around ${zones.length} zone${zones.length===1?'':'s'}` : 'No-panel zones removed; layout updated');
 });
 const pointers=new Map(); let pinchDistance;
 $('roof-map').addEventListener('pointerdown',event=>{
@@ -718,7 +719,33 @@ for(const tab of document.querySelectorAll('#result-tabs [role="tab"]')){
     setTab(TABS[next]); document.querySelector(`#result-tabs [data-tab-target="${TABS[next]}"]`).focus();
   });
 }
-$('compare-models').addEventListener('click',event=>{event.preventDefault();setTab('panels');$('panel-comparison-section').open=true;$('result-tabs').scrollIntoView({behavior:'smooth',block:'start'});});
+$('compare-models').addEventListener('click',()=>{
+  const expanded=$('compare-models').getAttribute('aria-expanded')!=='true';
+  $('compare-models').setAttribute('aria-expanded',String(expanded));
+  $('quick-panel-options').hidden=!expanded;
+});
+$('see-more-panels').addEventListener('click',()=>{
+  setTab('panels');$('panel-comparison-section').open=true;
+  $('tab-panels').focus({preventScroll:true});
+  $('result-tabs').scrollIntoView({behavior:'smooth',block:'start'});
+});
+function renderQuickPanels(data) {
+  const items=(data?.recommendations || []).slice(0,3).filter(item=>item.model.model_id!==data?.selected_model_id).slice(0,2);
+  const list=$('quick-panel-list');list.replaceChildren();
+  $('compare-models').disabled=items.length===0;
+  if(!items.length){$('compare-models').setAttribute('aria-expanded','false');$('quick-panel-options').hidden=true;return;}
+  for(const item of items){
+    const card=document.createElement('article');card.className='quick-panel-option';card.setAttribute('role','listitem');card.dataset.model=item.model.model_id;
+    const title=document.createElement('h4');title.textContent=`#${item.rank} · ${fullPanelName(item.model)}`;
+    const dimensions=document.createElement('p');dimensions.className='hint';dimensions.textContent=`${format(item.model.rated_power_w)} W · ${format(item.model.width_m,2)} × ${format(item.model.height_m,2)} m · ${format(item.panel_count)} panels`;
+    const stats=document.createElement('p');stats.textContent=`${format(item.estimated_energy_kwh_year)} kWh/year · ${dollars(item.estimated_cost_usd)} installed`;
+    const preview=document.createElement('button');preview.type='button';preview.className='secondary';preview.textContent='Preview on map';
+    preview.setAttribute('aria-label',`Preview ${fullPanelName(item.model)} on the map`);
+    preview.addEventListener('click',()=>previewPanel(item.model.model_id));
+    card.append(title,dimensions,stats,preview);list.append(card);
+  }
+}
+
 
 
 function renderBudgetScope() {

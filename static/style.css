@@ -208,13 +208,13 @@ td small { display: block; color: var(--muted); font-weight: 400; font-size: 10p
 .panel-option-body p, .panel-option-body li { font-size: 12px; line-height: 1.7; }
 .panel-option-body > .text-link { display: inline-block; margin: 0 0 8px; }
 /* One row of four cards; the rest scroll vertically within the same space. */
-.top-panels { --card-height: 496px; position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: var(--card-height); gap: 18px; height: calc(var(--card-height) + 10px); margin: 20px 24px 10px; padding: 2px 6px 8px 2px; overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y mandatory; scroll-padding: 2px; scrollbar-width: thin; }
+.top-panels { --card-height: 540px; position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-auto-rows: var(--card-height); gap: 18px; height: calc(var(--card-height) + 10px); margin: 20px 24px 10px; padding: 2px 6px 8px 2px; overflow-y: auto; overscroll-behavior: contain; scroll-snap-type: y mandatory; scroll-padding: 2px; scrollbar-width: thin; }
 .top-panels:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; border-radius: 8px; }
 .top-panel { display: flex; flex-direction: column; gap: 11px; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: white; overflow: hidden; cursor: pointer; scroll-snap-align: start; transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; animation: rise .45s ease both; animation-delay: var(--delay, 0ms); }
 .top-panel:hover { border-color: #b8cbc3; box-shadow: 0 6px 16px #1b33281a; transform: translateY(-2px); }
 .top-panel.selected { border-color: var(--green); box-shadow: 0 0 0 1px var(--green); cursor: default; transform: none; }
 .top-panel > :not(.top-panel-art):not(.top-panel-actions) { margin-left: 18px; margin-right: 18px; }
-.top-panel-art { position: relative; flex: none; display: grid; place-items: center; height: 124px; background: linear-gradient(160deg, #f4f8f6, #e3ece8); border-bottom: 1px solid var(--line); }
+.top-panel-art { position: relative; flex: none; display: grid; grid-template-rows: 104px auto; row-gap: 14px; place-items: center; padding: 12px 12px 10px; height: 168px; background: linear-gradient(160deg, #f4f8f6, #e3ece8); border-bottom: 1px solid var(--line); }
 .panel-art { width: 104px; height: 104px; overflow: visible; }
 .panel-art-shadow { fill: #1b33281f; }
 .panel-art-frame { fill: #2b3238; }
@@ -226,7 +226,7 @@ td small { display: block; color: var(--muted); font-weight: 400; font-size: 10p
 .top-panel:first-child .top-panel-rank { background: var(--green); }
 .top-panel-place { position: absolute; top: 12px; right: 12px; font-size: 11px; font-weight: 600; color: var(--muted); }
 .top-panel.selected .top-panel-place { color: var(--green); }
-.top-panel-size { position: absolute; bottom: 7px; font-size: 11px; color: var(--muted); }
+.top-panel-size { grid-row: 2; position: static; margin: 0; text-align: center; font-size: 11px; line-height: 1.5; color: var(--muted); }
 .top-panel-head .eyebrow { margin: 0 0 1px; text-transform: uppercase; letter-spacing: .6px; font-size: 10.5px; }
 .top-panel-head h3 { margin: 0; font-size: 16px; font-weight: 650; line-height: 1.3; }
 .top-panel-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 0; margin-bottom: 0; }
@@ -474,3 +474,12 @@ summary:hover { color: var(--green); }
 .source-list { padding-left: 18px; font-size: 12.5px; color: var(--muted); }
 .source-list li { margin-bottom: 6px; }
 @media (max-width: 760px) { .impact-grid { grid-template-columns: 1fr 1fr; } }
+
+/* Local alternatives keep the map visible while switching the panel model. */
+.quick-panel-options { border-top:1px solid var(--line); margin-top:16px; padding-top:16px; }
+.quick-panel-options > h3 { margin-bottom:12px; }
+.quick-panel-option { border:1px solid var(--line); border-radius:6px; padding:12px; margin-bottom:12px; }
+.quick-panel-option h4 { font-size:13px; line-height:1.5; margin:0 0 6px; overflow-wrap:anywhere; }
+.quick-panel-option p { font-size:12px; margin:0 0 8px; }
+.quick-panel-option .secondary { width:100%; }
+.zone-heading #zone-status { max-width:100%; }
