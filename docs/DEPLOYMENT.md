@@ -47,3 +47,13 @@ Provider references: [Flask deployment](https://render.com/docs/deploy-flask),
 [Blueprint configuration](https://render.com/docs/blueprint-spec),
 [free service limitations](https://render.com/docs/free), and
 [Render environment variables](https://render.com/docs/environment-variables).
+
+## Use a Vercel public address
+
+Import this GitHub repository into Vercel with **Root Directory = `vercel`**.
+The [Vercel setup guide](../vercel/README.md) explains the required
+`PHOTOGRID_BACKEND_URL` setting and sample checks. Deploy the Render service
+above first: Vercel serves as the website gateway, while Render runs the
+background analysis and retains working raster files. Importing the repository
+root directly as a Vercel Python Function is not supported by this app's
+in-memory job and local imagery architecture.

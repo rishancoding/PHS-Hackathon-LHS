@@ -126,3 +126,11 @@ A radius is measured from the center, up to 1,000 m (3,280.84 ft). The Solar API
 | 500–1,000 | 1 m |
 
 Processing uses at most 2,000 pixels per side, so very large circles are analyzed more coarsely and small roofs can be lost. Google's coverage and imagery date affect completeness.
+
+### Vercel hosting
+
+For a public Vercel address, follow [the Vercel guide](vercel/README.md).
+Import the repository with **Root Directory = `vercel`** and set
+`PHOTOGRID_BACKEND_URL` to the deployed Render service. The full Python analysis
+server stays on Render so background jobs and raster previews remain available
+across Vercel requests. API/database keys stay in the backend's secret settings.
