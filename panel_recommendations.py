@@ -132,7 +132,8 @@ def build_recommendations(result, budget_usd=25000, energy_target_kwh_year=10000
                       priority, excluded_roof_ids, geographic, result['analysis']['resolution_m'], result['assumptions'],
                       [(roof['properties']['id'], roof['properties']['area_m2'],
                         roof['properties']['flux_coverage_percent'], roof['properties'].get('annual_yield_kwh_per_kw'),
-                        roof.get('preview_geometry')) for roof in result['roofs']]]
+                        roof.get('preview_geometry')) for roof in result['roofs']],
+                      [feature.get('preview_geometry') for feature in result.get('existing_panels', [])]]
     signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, allow_nan=False).encode()).hexdigest()
     previous = result.get('panel_recommendations', {})
     if reuse_comparison and previous.get('comparison_signature') == signature:

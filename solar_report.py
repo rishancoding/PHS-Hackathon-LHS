@@ -62,6 +62,8 @@ def annotated_map(result, directory):
             off = roof['properties']['id'] in excluded
             outline(roof['preview_geometry'], (130, 140, 150, 30) if off else (35, 165, 90, 30),
                     (170, 180, 190, 230) if off else (90, 240, 130, 255))
+    for feature in result.get('existing_panels', []):
+        outline(feature['preview_geometry'], (255, 138, 61, 110), (255, 179, 122, 255))
     for panel in result.get('proposal', {}).get('panels', []):
         outline(panel['preview_geometry'], (41, 140, 255, 240), (215, 235, 255, 255))
     combined = Image.alpha_composite(picture, overlay)
@@ -155,7 +157,7 @@ def create_pdf_report(result, directory, model_ids=()):
              f"Radius: {request['radius_meters']:,.0f} m | Coordinates: {request['latitude']:.5f}, {request['longitude']:.5f}")
     pdf.text(f"Selected panel: {model.get('manufacturer', '')} {model.get('model_name', 'No catalog model selected')}", bold=True)
     pdf.picture(annotated_map(result, directory))
-    pdf.text('Green: included candidate roofs | Gray: excluded roofs | Blue: proposed modules', size=22)
+    pdf.text('Green: included roofs | Gray: excluded roofs | Blue: proposed modules | Orange: possible existing panels', size=22)
     date = result.get('imagery', {}).get('imageryDate')
     pdf.text('Imagery: ' + ('synthetic sample' if result.get('demo') else f'Google Solar API; date: {date or "unavailable"}'), size=22)
     for key, heading in [('findings', 'Findings'), ('next_steps', 'Next steps')]:

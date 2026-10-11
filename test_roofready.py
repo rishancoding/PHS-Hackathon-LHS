@@ -13,7 +13,7 @@ from rasterio.transform import from_origin
 from shapely.geometry import shape
 
 from demo_roofready import create_demo, run_demo
-from process_solar_layers import aligned_band, download_layers, metric_grid, process_layers
+from process_solar_layers import aligned_band, download_layers, metric_grid, process_layers, run_pipeline
 from roofready_app import create_app
 from solar_address import InputError
 
@@ -43,6 +43,18 @@ class ProcessingTests(unittest.TestCase):
         geojson = json.loads((self.directory / "roofs.geojson").read_text())
         self.assertEqual(len(geojson["features"]), 6)
         self.assertNotIn("preview_geometry", geojson["features"][0])
+
+    def test_live_pipeline_leaves_roof_addresses_for_separate_lookup(self):
+        request, paths = create_demo(self.directory / "layers")
+        with patch("process_solar_layers.prepare_request", return_value=request), \
+                patch("process_solar_layers.get_json", return_value={"imageryDate": {}}), \
+                patch("process_solar_layers.download_layers", return_value=paths), \
+                patch("roof_details.get_json") as reverse_geocode:
+            result = run_pipeline("123 Test St", 100, "meters", "test-key", self.directory)
+        reverse_geocode.assert_not_called()
+        self.assertEqual(result["summary"]["candidate_roofs"], 6)
+        self.assertTrue(all(r["properties"]["address_status"] == "not_looked_up" for r in result["roofs"]))
+        self.assertIn("candidate", result["report"]["findings"])
 
     def test_nodata_excluded_and_boundary_flagged(self):
         request, paths = create_demo(self.directory / "layers")
@@ -123,6 +135,20 @@ class DashboardTests(unittest.TestCase):
                     time.sleep(.05)
                 self.assertEqual(data["status"], "complete", data)
                 self.assertEqual(data["result"]["summary"]["candidate_roofs"], 6)
+                self.assertIsInstance(data["result"]["search_seconds"], float)
+                self.assertGreaterEqual(data["result"]["search_seconds"], 0)
+                # Street addresses are a separate step after the analysis.
+                self.assertTrue(all(r["properties"]["address_status"] == "not_looked_up"
+                                    for r in data["result"]["roofs"]))
+                lookup = client.post(f"/api/addresses/{job}", headers=origin, json={})
+                self.assertEqual(lookup.status_code, 202)
+                deadline = time.monotonic() + 15
+                while time.monotonic() < deadline:
+                    data = client.get(f"/api/jobs/{job}").get_json()
+                    if data["status"] != "running":
+                        break
+                    time.sleep(.05)
+                self.assertEqual(data["status"], "complete", data)
                 self.assertIn("synthetic", data["result"]["roofs"][0]["properties"]["address"])
                 self.assertIn("findings", data["result"]["report"])
                 self.assertGreater(data["result"]["proposal"]["panel_count"], 0)

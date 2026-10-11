@@ -59,7 +59,7 @@ function selectRoof(id) {
   if(roof){$('selected-roof').hidden=false;$('selected-address').textContent=roofLabel(roof.properties);$('selected-roof-info').textContent=`${roof.properties.id} · ${format(roof.properties.area_m2,1)} m² footprint · ${format(roof.properties.estimated_energy_kwh_year)} kWh/year estimated potential. ${addressNote(roof.properties)}`;}
 }
 function roofLabel(p){return p.address || 'Address unavailable';}
-function addressNote(p){return p.address_status==='synthetic' ? 'Synthetic demo address.' : p.address_status==='nearby_address' ? 'Nearby address; roof match is approximate.' : p.address_status==='reverse_geocoded' ? 'Reverse-geocoded address; verify the building match.' : 'Address not resolved. Use Look up roof addresses.';}
+function addressNote(p){return p.address_status==='synthetic' ? 'Synthetic demo address.' : p.address_status==='nearby_address' ? 'Nearby address; roof match is approximate.' : p.address_status==='reverse_geocoded' ? 'Reverse-geocoded address; verify the building match.' : p.address_status==='not_looked_up' ? 'Street address not looked up yet. Use Look up roof addresses.' : 'Address not resolved. Use Look up roof addresses.';}
 function render(result,job,preserveView=false) {
   currentResult=result; currentJob=job; activeRoof=null;
   $('selected-roof').hidden=true;
@@ -69,6 +69,9 @@ function render(result,job,preserveView=false) {
   $('budget-includes-installation').checked=result.proposal?.budget_includes_installation!==false;renderBudgetScope();
   renderRoofSelection(result);
   $('source-badge').textContent=result.demo ? 'Sample area · Synthetic data' : 'Google Solar · Screening estimates';
+  const seconds=result.search_seconds;
+  $('search-time').hidden=typeof seconds!=='number';
+  if(typeof seconds==='number')$('search-time').textContent=`Search took ${seconds<60 ? `${seconds.toFixed(1)} s` : `${Math.floor(seconds/60)} min ${Math.round(seconds%60)} s`}`;
   $('result-address').textContent=result.request.address;
   $('result-meta').textContent=`${format(result.request.radius_meters,2)} m radius · ${result.request.latitude.toFixed(5)}, ${result.request.longitude.toFixed(5)} · ${format(result.analysis.resolution_m,2)} m analysis pixels`;
   $('roof-count').textContent=format(result.summary.candidate_roofs);
@@ -83,6 +86,12 @@ function render(result,job,preserveView=false) {
   $('center-marker').setAttribute('transform',`translate(${width/2} ${height/2})`);
   if(!preserveView) {$('heat-toggle').checked=false; $('sunlight').setAttribute('visibility','hidden');}
   $('outlines').replaceChildren(); $('roof-rows').replaceChildren(); $('roof-accordions').replaceChildren();
+  $('existing-panels').replaceChildren();
+  for(const feature of result.existing_panels || []) {
+    const area=document.createElementNS('http://www.w3.org/2000/svg','path');
+    area.setAttribute('d',pathFor(feature.preview_geometry)); area.setAttribute('fill-rule','evenodd'); area.setAttribute('class','existing-panel');
+    $('existing-panels').append(area);
+  }
   for(const roof of result.roofs) {
     const p=roof.properties;
     const outline=document.createElementNS('http://www.w3.org/2000/svg','path');
@@ -96,7 +105,7 @@ function render(result,job,preserveView=false) {
     const row=document.createElement('tr'); row.dataset.roof=p.id; row.tabIndex=0;
     const values=[`${p.rank}. ${roofLabel(p)}`,format(p.area_m2,1),format(p.annual_yield_kwh_per_kw,1),format(p.estimated_capacity_kw,1),format(p.estimated_energy_kwh_year),format(p.flux_coverage_percent,1)+'%'];
     values.forEach((value,index)=>{ const cell=document.createElement('td'); cell.textContent=value;
-      if(index===0){const detail=document.createElement('small');detail.textContent=`${p.id} · ${addressNote(p)}${p.partial_roof?' Partial roof at boundary.':''}`;cell.append(detail);} row.append(cell); });
+      if(index===0){const detail=document.createElement('small');detail.textContent=`${p.id} · ${addressNote(p)}${p.partial_roof?' Partial roof at boundary.':''}${p.existing_panel_area_m2?` About ${format(p.existing_panel_area_m2,1)} m² possible existing panels (avoided).`:''}`;cell.append(detail);} row.append(cell); });
     row.addEventListener('click',()=>selectRoof(p.id)); row.addEventListener('keydown',event=>{if(event.key==='Enter'){selectRoof(p.id);}});
     $('roof-rows').append(row);
     const detail=document.createElement('details');detail.className='roof-accordion';detail.dataset.roof=p.id;
@@ -105,7 +114,7 @@ function render(result,job,preserveView=false) {
     const badge=document.createElement('span');badge.className='roof-energy-badge';badge.textContent=`${format(p.estimated_energy_kwh_year)} kWh/year potential`;
     summary.append(heading,badge);detail.append(summary);
     const body=document.createElement('div');body.className='roof-detail-body';
-    const info=document.createElement('p');info.className='hint';info.textContent=`${p.id} · ${addressNote(p)}${p.partial_roof?' Partial roof at boundary.':''}`;
+    const info=document.createElement('p');info.className='hint';info.textContent=`${p.id} · ${addressNote(p)}${p.partial_roof?' Partial roof at boundary.':''}${p.existing_panel_area_m2?` About ${format(p.existing_panel_area_m2,1)} m² possible existing panels (avoided).`:''}`;
     const metrics=document.createElement('div');metrics.className='roof-detail-metrics';
     for(const [label,value] of [['Footprint',`${format(p.area_m2,1)} m²`],['Assumed usable area',withUnit(number(p.area_m2)==null || number(result.assumptions?.usable_roof_fraction)==null ? null : p.area_m2*result.assumptions.usable_roof_fraction,'m²',1)],['Average yield',`${format(p.annual_yield_kwh_per_kw,1)} kWh/kW/year`],['Potential capacity',`${format(p.estimated_capacity_kw,1)} kW`],['Sunlight coverage',`${format(p.flux_coverage_percent,1)}%`]]){
       const metric=document.createElement('div');const labelNode=document.createElement('span');labelNode.textContent=label;const valueNode=document.createElement('strong');valueNode.textContent=value;metric.append(labelNode,valueNode);metrics.append(metric);

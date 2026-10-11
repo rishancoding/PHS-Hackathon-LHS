@@ -34,6 +34,8 @@ def create_demo(directory):
         rgb[:, top:bottom, left:right] = np.array([195, 174, 151])[:, None, None]
         annual[top:bottom, left:right] = flux
         dsm[top:bottom, left:right] = 18
+    # Synthetic slate-blue array (10 m x 6 m) that the color check flags as an existing installation.
+    rgb[:, 124:130, 34:44] = np.array([118, 132, 162])[:, None, None]
     paths = {}
     for name, array in (("rgb", rgb), ("mask", mask[None]), ("annual_flux", annual[None]), ("dsm", dsm[None])):
         paths[name] = directory / f"{name}.tif"

@@ -9,13 +9,14 @@ import os
 from pathlib import Path
 import secrets
 from threading import Lock
+import time
 
 from flask import Flask, abort, jsonify, render_template, request, send_from_directory, send_file
 
 from address_autocomplete import address_predictions
 from demo_roofready import run_demo
 from process_solar_layers import run_pipeline
-from solar_address import DEFAULT_API_KEY, InputError, radius_in_meters
+from solar_address import DEFAULT_API_KEY, InputError, radius_in_meters, search_address
 from panel_recommendations import build_recommendations, validate_recommendation_inputs, load_catalog
 from solar_report import create_pdf_report
 from roof_details import add_roof_addresses, describe_results, save_report
@@ -66,10 +67,9 @@ def create_app(output_root=None):
         if not isinstance(supplied, str):
             return jsonify(error="API key must be text."), 400
         with lock:
-            recent = list(dict.fromkeys(
-                job["result"]["request"]["address"] for job in reversed(list(jobs.values()))
-                if job["status"] == "complete" and not job["result"].get("demo")
-                and query.casefold() in job["result"]["request"]["address"].casefold()))[:5]
+            saved = (search_address(job["result"]["request"]) for job in reversed(list(jobs.values()))
+                     if job["status"] == "complete" and not job["result"].get("demo"))
+            recent = list(dict.fromkeys(address for address in saved if query.casefold() in address.casefold()))[:5]
         fallback = [{"address": address, "label": address, "detail": "Previously analyzed", "source": "recent"}
                     for address in recent]
         key = supplied.strip() or os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
@@ -85,17 +85,18 @@ def create_app(output_root=None):
         def progress(message):
             with lock:
                 jobs[job_id]["message"] = message
+        started = time.monotonic()
         try:
             directory = output_root / job_id
             if body.get("demo") is True:
                 result = run_demo(directory, progress)
-                add_roof_addresses(result)
             else:
                 result = run_pipeline(body["address"], body["radius"], body["unit"], key,
                                       directory, progress=progress, usable_fraction=body["usable_fraction"],
                                       panel_kw_per_m2=body["panel_kw_per_m2"])
             progress("Comparing panel models and building your layout…")
             build_recommendations(result, **body["plan_inputs"])
+            result["search_seconds"] = round(time.monotonic() - started, 1)
             save_report(result, directory)
             with lock:
                 jobs[job_id].update(status="complete", message="Analysis complete", result=result)
@@ -157,7 +158,7 @@ def create_app(output_root=None):
     def history():
         with lock:
             return jsonify([
-                {"job_id": job_id, "address": job["result"]["request"]["address"], "demo": job["result"].get("demo", False)}
+                {"job_id": job_id, "address": search_address(job["result"]["request"]), "demo": job["result"].get("demo", False)}
                 for job_id, job in reversed(list(jobs.items())) if job["status"] == "complete"
             ])
 
