@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 from shapely import box as vector_boxes, covers, prepare
-from shapely.geometry import mapping, shape
+from shapely.geometry import box, mapping, shape
 from shapely.ops import unary_union
 
 from solar_address import InputError
@@ -57,10 +57,6 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
     limit = min(budget_count, 5000)
     panels, energy = [], 0.0
     search_limited = False
-    available_area = sum(max(0, (r["properties"]["area_m2"] - r["properties"].get("existing_panel_area_m2", 0))
-                             * assumptions["usable_roof_fraction"]
-                         * r["properties"]["flux_coverage_percent"] / 100)
-                         for r in result["roofs"] if r["properties"].get("annual_yield_kwh_per_kw") and r.get("preview_geometry"))
     if space_limit_m2 is not None:
         limit = min(limit, math.floor(space_limit_m2 / panel_area))
     geometry_cache = {} if _geometry_cache is None else _geometry_cache
@@ -68,6 +64,22 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
     for feature in result.get("existing_panels", []):
         blocked.setdefault(feature["properties"]["roof_id"], []).append(
             shape(feature["preview_geometry"]).buffer(.2 / resolution, join_style="mitre"))
+    zones = [box(*zone["bounds"]) for zone in result.get("blocked_zones", [])]
+
+    def usable_geometry(roof):
+        """Roof outline minus possible existing panels and user no-panel zones, plus the share kept."""
+        key = id(roof)
+        if key not in geometry_cache:
+            original = shape(roof["preview_geometry"])
+            removed = blocked.get(roof["properties"]["id"], []) + [zone for zone in zones if zone.intersects(original)]
+            polygon = original.difference(unary_union(removed)) if removed else original
+            prepare(polygon)
+            geometry_cache[key] = (polygon, polygon.area / original.area if original.area else 0)
+        return geometry_cache[key]
+
+    available_area = sum(max(0, r["properties"]["area_m2"] * usable_geometry(r)[1] * assumptions["usable_roof_fraction"]
+                             * r["properties"]["flux_coverage_percent"] / 100)
+                         for r in result["roofs"] if r["properties"].get("annual_yield_kwh_per_kw") and r.get("preview_geometry"))
     roofs = sorted(result["roofs"], key=lambda r: r["properties"].get("annual_yield_kwh_per_kw") or 0, reverse=True)
     counts = {}
     for roof in roofs:
@@ -75,16 +87,8 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
         yield_value = properties.get("annual_yield_kwh_per_kw")
         if not yield_value or not roof.get("preview_geometry"):
             continue
-        geometry_key = id(roof)
-        if geometry_key not in geometry_cache:
-            polygon = shape(roof["preview_geometry"])
-            if properties["id"] in blocked:
-                polygon = polygon.difference(unary_union(blocked[properties["id"]]))
-            prepare(polygon)
-            geometry_cache[geometry_key] = polygon
-        polygon = geometry_cache[geometry_key]
-        roof_limit = math.floor(max(0, properties["area_m2"] - properties.get("existing_panel_area_m2", 0))
-                                * assumptions["usable_roof_fraction"]
+        polygon, kept = usable_geometry(roof)
+        roof_limit = math.floor(properties["area_m2"] * kept * assumptions["usable_roof_fraction"]
                                 * properties["flux_coverage_percent"] / 100 / panel_area)
         # Try both axis-aligned orientations; use the one fitting more modules.
         remaining = limit - len(panels)
@@ -137,7 +141,7 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
         "panel_width_m": panel_width, "panel_height_m": panel_height,
         "panel_model": panel_model, "space_limit_m2": space_limit_m2, "available_roof_area_m2": round(available_area, 2),
         "panel_area_used_m2": round(len(panels) * panel_area, 3), "layout_search_limited": search_limited, "counts_by_roof": counts, "panels": panels,
-        "notes": "Concept layout using roof-average yield and an estimated installed price. New panels avoid areas flagged as possible existing panels (a color-based check). Other obstructions, roof ownership, slope, and required setbacks are not detected or excluded. This is not an installation design or quote.",
+        "notes": "Concept layout using roof-average yield and an estimated installed price. New panels avoid areas flagged as possible existing panels (a color-based check) and any no-panel zones you drew. Other obstructions, roof ownership, slope, and required setbacks are not detected or excluded. This is not an installation design or quote.",
     }
 
 

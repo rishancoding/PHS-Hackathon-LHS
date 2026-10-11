@@ -111,7 +111,7 @@ class DashboardTests(unittest.TestCase):
             try:
                 page = client.get("/")
                 self.assertEqual(page.status_code, 200)
-                self.assertIn(b'id="recommendation-tiers"', page.data)
+                self.assertIn(b'id="top-panels"', page.data)
                 self.assertIn(b'id="panel-priority"', page.data)
                 asset = client.get("/static/app.js")
                 self.assertEqual(asset.status_code, 200)

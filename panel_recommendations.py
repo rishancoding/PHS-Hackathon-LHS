@@ -11,6 +11,7 @@ from solar_address import InputError
 
 CATALOG = Path(__file__).with_name('panel_catalog (2).csv')
 PRIORITIES = {'balanced', 'lowest_cost', 'space_efficiency', 'longer_warranty'}
+MAX_BLOCKED_ZONES = 200
 # Explicit modeling allowance, not a measured module price or local labor quote.
 REFERENCE_MODULE_ALLOWANCE_PER_WATT = .35
 
@@ -75,17 +76,35 @@ def validate_recommendation_inputs(body):
     if excluded is not None and (not isinstance(excluded, list) or len(excluded) > 10000
                                  or any(not isinstance(value, str) for value in excluded)):
         raise InputError('Excluded roofs must be a list of roof IDs.')
+    zones = body.get('blocked_zones')
+    if zones is not None:
+        if not isinstance(zones, list) or len(zones) > MAX_BLOCKED_ZONES:
+            raise InputError(f'No-panel zones must be a list of at most {MAX_BLOCKED_ZONES} boxes.')
+        parsed = []
+        for zone in zones:
+            if (not isinstance(zone, list) or len(zone) != 4
+                    or any(isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) for v in zone)):
+                raise InputError('Each no-panel zone must be four finite numbers: left, top, right, bottom.')
+            left, right = sorted(zone[0::2])
+            top, bottom = sorted(zone[1::2])
+            if right <= left or bottom <= top:
+                raise InputError('No-panel zones need a width and height greater than zero.')
+            parsed.append([left, top, right, bottom])
+        zones = parsed
     values.update(priority=priority, space_limit_m2=space, selected_model_id=selected,
-                  excluded_roof_ids=list(dict.fromkeys(excluded)) if excluded is not None else None)
+                  excluded_roof_ids=list(dict.fromkeys(excluded)) if excluded is not None else None,
+                  blocked_zones=zones)
     return values
 
 
 def build_recommendations(result, budget_usd=25000, energy_target_kwh_year=10000,
-                          priority='balanced', space_limit_m2=None, selected_model_id=None, catalog=None, excluded_roof_ids=None, reuse_comparison=False, budget_includes_installation=True):
+                          priority='balanced', space_limit_m2=None, selected_model_id=None, catalog=None, excluded_roof_ids=None, reuse_comparison=False, budget_includes_installation=True,
+                          blocked_zones=None):
     inputs = validate_recommendation_inputs(dict(budget_usd=budget_usd, energy_target_kwh_year=energy_target_kwh_year,
                                                priority=priority, space_limit_m2=space_limit_m2,
                                                selected_model_id=selected_model_id, excluded_roof_ids=excluded_roof_ids,
-                                               budget_includes_installation=budget_includes_installation))
+                                               budget_includes_installation=budget_includes_installation,
+                                               blocked_zones=blocked_zones))
     excluded_roof_ids = inputs['excluded_roof_ids']
     if excluded_roof_ids is None:
         excluded_roof_ids = result.get('roof_selection', {}).get('excluded_roof_ids', [])
@@ -93,6 +112,21 @@ def build_recommendations(result, budget_usd=25000, energy_target_kwh_year=10000
     if set(excluded_roof_ids) - known_roofs:
         raise InputError('One or more excluded roof IDs do not belong to this analysis.')
     excluded_roof_ids = sorted(set(excluded_roof_ids))
+    # User-drawn no-panel zones, in preview pixels; None keeps the saved zones.
+    zone_bounds = inputs['blocked_zones']
+    if zone_bounds is None:
+        zone_bounds = [zone['bounds'] for zone in result.get('blocked_zones', [])]
+    width = result['analysis'].get('raster_width', math.inf)
+    height = result['analysis'].get('raster_height', math.inf)
+    resolution = result['analysis']['resolution_m']
+    zones = []
+    for left, top, right, bottom in zone_bounds:
+        left, right = max(0, left), min(width, right)
+        top, bottom = max(0, top), min(height, bottom)
+        if right > left and bottom > top:
+            zones.append({'id': f'zone-{len(zones) + 1}', 'bounds': [round(v, 2) for v in (left, top, right, bottom)],
+                          'area_m2': round((right - left) * (bottom - top) * resolution ** 2, 1)})
+    result['blocked_zones'] = zones
     planning_result = {**result, 'roofs': [roof for roof in result['roofs']
                                         if roof['properties']['id'] not in excluded_roof_ids]}
     models = load_catalog() if catalog is None else catalog
@@ -133,7 +167,8 @@ def build_recommendations(result, budget_usd=25000, energy_target_kwh_year=10000
                       [(roof['properties']['id'], roof['properties']['area_m2'],
                         roof['properties']['flux_coverage_percent'], roof['properties'].get('annual_yield_kwh_per_kw'),
                         roof.get('preview_geometry')) for roof in result['roofs']],
-                      [feature.get('preview_geometry') for feature in result.get('existing_panels', [])]]
+                      [feature.get('preview_geometry') for feature in result.get('existing_panels', [])],
+                      [zone['bounds'] for zone in zones]]
     signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, allow_nan=False).encode()).hexdigest()
     previous = result.get('panel_recommendations', {})
     if reuse_comparison and previous.get('comparison_signature') == signature:
@@ -235,15 +270,12 @@ def placement_reasons(result, plan):
         elif panels:
             orientations = sorted({(round(p['width_m'], 3), round(p['height_m'], 3)) for p in panels})
             sizes = ', '.join(f'{width} x {height} m' for width, height in orientations)
-            reason = (f"Considered #{order[rid]} among included roofs with usable yield: "
-                      f"{props['annual_yield_kwh_per_kw']:,.0f} kWh per installed kW per year. "
-                      f"{len(panels)} panels fit fully inside this outline at {sizes}, with 0.2 m gaps. "
-                      'The count is limited by usable area, sunlight coverage and the remaining budget, space and target.')
+            reason = (f"#{order[rid]} by sunlight ({props['annual_yield_kwh_per_kw']:,.0f} kWh/kW/year): "
+                      f"{len(panels)} panels fit at {sizes} with 0.2 m gaps, limited by area, budget and target.")
         elif not props.get('annual_yield_kwh_per_kw') or not props.get('flux_coverage_percent'):
             reason = 'No usable sunlight estimate; this roof cannot contribute to the panel plan.'
         else:
-            reason = ('No panels in this layout: higher-yield roofs may have satisfied the target or used the budget/area cap, '
-                      "or no module fit within this roof's geometric and usable-area limits.")
+            reason = 'No panels here: sunnier roofs met the target or used the budget, or no module fits.'
         reasons.append({'roof_id': rid, 'panel_count': len(panels), 'excluded': rid in excluded, 'reason': reason})
     return reasons
 

@@ -116,6 +116,10 @@ def describe_results(result):
                          f"({area:,.0f} m²); new panels avoid those areas. This is a color-based check, so verify it on the aerial image.")
         else:
             findings += " No existing solar panels were flagged by the color-based check."
+    zones = result.get("blocked_zones")
+    if zones:
+        findings += (f" You marked {len(zones)} no-panel zone{'s' if len(zones) != 1 else ''} "
+                     f"({sum(zone['area_m2'] for zone in zones):,.0f} m² of map area); new panels are kept out of them.")
     selection = result.get("roof_selection")
     if selection:
         findings += (f" Panel planning uses {len(selection['included_roof_ids'])} included roof regions; "
