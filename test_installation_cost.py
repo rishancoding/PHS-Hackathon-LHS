@@ -24,7 +24,7 @@ class InstallationCostTests(unittest.TestCase):
         plan = propose_panels(data, budget_usd=2500, energy_target_kwh_year=10000)
         self.assertEqual(plan["panel_count"], 1)
         self.assertEqual(plan["installation_estimate"]["region"], "West")
-        self.assertAlmostEqual(plan["estimated_cost_usd"], .4 * 1000 * 3.402)
+        self.assertAlmostEqual(plan["estimated_cost_usd"], 0.4 * 1000 * 3.402)
         self.assertLessEqual(plan["estimated_cost_usd"], 2500)
 
 

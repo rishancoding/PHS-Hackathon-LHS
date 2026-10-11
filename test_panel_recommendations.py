@@ -1,4 +1,5 @@
 """Behavior tests for catalog comparisons, constraint tiers and chosen model layouts."""
+
 import json
 import tempfile
 from pathlib import Path
@@ -12,25 +13,68 @@ from test_panel_plan import fixture
 
 
 def model(mid, watts=100, price=50, width=1, height=1, warranty=2, kind='rigid'):
-    return {'model_id': mid, 'model_name': mid, 'manufacturer': 'Test', 'width_m': width,
-            'height_m': height, 'rated_power_w': watts, 'price_usd': price,
-            'product_warranty_years': warranty, 'performance_warranty_years': 25,
-            'temperature_coefficient_pct_per_c': None, 'panel_type': kind,
-            'area_m2': width*height, 'price_per_watt_usd': price/watts,
-            'power_density_w_per_m2': watts/(width*height)}
+    return {
+        'model_id': mid,
+        'model_name': mid,
+        'manufacturer': 'Test',
+        'width_m': width,
+        'height_m': height,
+        'rated_power_w': watts,
+        'price_usd': price,
+        'product_warranty_years': warranty,
+        'performance_warranty_years': 25,
+        'temperature_coefficient_pct_per_c': None,
+        'panel_type': kind,
+        'area_m2': width * height,
+        'price_per_watt_usd': price / watts,
+        'power_density_w_per_m2': watts / (width * height),
+    }
 
 
 class RecommendationTests(unittest.TestCase):
     def test_catalog_ignores_stock_and_keeps_unknown_specs(self):
         models = load_catalog()
-        self.assertEqual(len(models), 20)
+        self.assertEqual(len(models), 24)
         self.assertTrue(all(m['ignore_stock'] == 'true' for m in models))
         rich = next(m for m in models if m['model_id'] == 'richsolar-rs-m200')
         self.assertIsNone(rich['product_warranty_years'])
         result = build_recommendations(fixture(), 5000, 1000)
-        self.assertEqual(len(result['panel_recommendations']['recommendations']), 15)
-        self.assertEqual(len(result['panel_recommendations']['excluded_models']), 5)
+        # 24 models: 14 rigid rooftop modules compared; 5 portable/flexible and 5 under 100 W excluded.
+        self.assertEqual(len(result['panel_recommendations']['recommendations']), 14)
+        self.assertEqual(len(result['panel_recommendations']['excluded_models']), 10)
+        self.assertTrue(
+            any('Under 100 W' in item['reason'] for item in result['panel_recommendations']['excluded_models'])
+        )
+        residential = [
+            m
+            for m in models
+            if m['model_id']
+            in {
+                'qcells-q-tron-blk-m-g2-plus-425',
+                'rec-alpha-pure-rx-460',
+                'aptos-dna-108-mfn10-440w',
+                'silfab-sil-430-qd',
+            }
+        ]
+        self.assertEqual(len(residential), 4)
+        self.assertTrue(
+            all(
+                m['specifications_source_url'].startswith('https://') and m['price_source_url'].startswith('https://')
+                for m in residential
+            )
+        )
         json.dumps(result, allow_nan=False)
+
+    def test_impact_estimates_use_state_prices_and_stated_factors(self):
+        from impact import estimate_impact
+
+        impact = estimate_impact({"estimated_energy_kwh_year": 10000, "estimated_cost_usd": 26000}, "CA")
+        self.assertEqual(impact["annual_bill_savings_usd"], 3254.0)
+        self.assertEqual(impact["simple_payback_years"], 8.0)
+        self.assertAlmostEqual(impact["co2_avoided_tonnes_per_year"], 6.23, places=2)
+        self.assertAlmostEqual(impact["homes_powered"], 0.96, places=2)
+        self.assertEqual(estimate_impact({"estimated_energy_kwh_year": 0}, "ZZ")["price_region"], "US average")
+        self.assertIsNone(estimate_impact({"estimated_energy_kwh_year": 0}, "CA")["simple_payback_years"])
 
     def test_priority_changes_recommendation_and_map_dimensions(self):
         catalog = [model('value'), model('compact', watts=200, price=100, warranty=10)]
@@ -42,18 +86,25 @@ class RecommendationTests(unittest.TestCase):
         self.assertEqual(compact['proposal']['panel_count'], 2)
         warranty = build_recommendations(fixture(), 2000, 300, priority='longer_warranty', catalog=catalog)
         self.assertEqual(warranty['proposal']['panel_model']['model_id'], 'compact')
-        self.assertTrue(any('10-year product warranty' in r for r in warranty['panel_recommendations']['recommendations'][0]['reasons']))
+        self.assertTrue(
+            any(
+                '10-year product warranty' in r
+                for r in warranty['panel_recommendations']['recommendations'][0]['reasons']
+            )
+        )
 
     def test_changing_models_scales_physical_dimensions_at_each_image_resolution(self):
-        catalog = [model('small', width=.5, height=1), model('large', watts=200, width=1.25, height=2.1)]
-        for resolution in (.25, .5, 2):
+        catalog = [model('small', width=0.5, height=1), model('large', watts=200, width=1.25, height=2.1)]
+        for resolution in (0.25, 0.5, 2):
             data = fixture()
             data['analysis']['resolution_m'] = resolution
-            data['roofs'][0]['properties']['area_m2'] = 400 * resolution ** 2
+            data['roofs'][0]['properties']['area_m2'] = 400 * resolution**2
             layouts = []
             for chosen in catalog:
                 with self.subTest(resolution=resolution, model=chosen['model_id']):
-                    result = build_recommendations(data, 10000, 1000, selected_model_id=chosen['model_id'], catalog=catalog)
+                    result = build_recommendations(
+                        data, 10000, 1000, selected_model_id=chosen['model_id'], catalog=catalog
+                    )
                     plan = result['proposal']
                     self.assertGreater(plan['panel_count'], 0)
                     self.assertEqual(plan['panel_model']['model_id'], chosen['model_id'])
@@ -61,12 +112,12 @@ class RecommendationTests(unittest.TestCase):
                     for panel in plan['panels']:
                         polygon = shape(panel['preview_geometry'])
                         left, top, right, bottom = polygon.bounds
-                        physical = sorted(((right-left)*resolution, (bottom-top)*resolution))
+                        physical = sorted(((right - left) * resolution, (bottom - top) * resolution))
                         for actual, dimension in zip(physical, expected):
                             self.assertAlmostEqual(actual, dimension)
-                        self.assertAlmostEqual(panel['width_m'], (right-left)*resolution)
-                        self.assertAlmostEqual(panel['height_m'], (bottom-top)*resolution)
-                        self.assertAlmostEqual(polygon.area * resolution**2, chosen['width_m']*chosen['height_m'])
+                        self.assertAlmostEqual(panel['width_m'], (right - left) * resolution)
+                        self.assertAlmostEqual(panel['height_m'], (bottom - top) * resolution)
+                        self.assertAlmostEqual(polygon.area * resolution**2, chosen['width_m'] * chosen['height_m'])
                         self.assertEqual(panel['model_id'], chosen['model_id'])
                         self.assertTrue(shape(data['roofs'][0]['preview_geometry']).covers(polygon))
                     layouts.append(plan['panels'][0]['preview_geometry'])
@@ -83,7 +134,9 @@ class RecommendationTests(unittest.TestCase):
 
     def test_space_cap_and_selected_alternative_are_applied_to_map(self):
         catalog = [model('value'), model('compact', watts=200, price=100)]
-        result = build_recommendations(fixture(), 5000, 500, space_limit_m2=2, selected_model_id='value', catalog=catalog)
+        result = build_recommendations(
+            fixture(), 5000, 500, space_limit_m2=2, selected_model_id='value', catalog=catalog
+        )
         plan = result['proposal']
         self.assertEqual(plan['panel_model']['model_id'], 'value')
         self.assertEqual(plan['panel_count'], 2)
@@ -97,12 +150,17 @@ class RecommendationTests(unittest.TestCase):
                 self.assertEqual(polygon.intersection(previous).area, 0)
 
     def test_rotation_and_holes_affect_fit_and_no_yield_is_excluded(self):
-        data = fixture(); data['assumptions']['usable_roof_fraction'] = 1
+        data = fixture()
+        data['assumptions']['usable_roof_fraction'] = 1
         data['roofs'][0]['preview_geometry'] = mapping(box(0, 0, 2.1, 1.1))
         data['roofs'][0]['properties']['area_m2'] = 2.31
         result = build_recommendations(data, 5000, 50, catalog=[model('rotated', width=1, height=2)])
         self.assertEqual(result['proposal']['panel_count'], 1)
-        self.assertTrue(shape(data['roofs'][0]['preview_geometry']).covers(shape(result['proposal']['panels'][0]['preview_geometry'])))
+        self.assertTrue(
+            shape(data['roofs'][0]['preview_geometry']).covers(
+                shape(result['proposal']['panels'][0]['preview_geometry'])
+            )
+        )
         data['roofs'][0]['properties']['annual_yield_kwh_per_kw'] = None
         result = build_recommendations(data, 5000, 50, catalog=[model('rotated', width=1, height=2)])
         self.assertEqual(result['proposal']['panel_count'], 0)
@@ -127,7 +185,8 @@ class RecommendationTests(unittest.TestCase):
         with self.assertRaises(InputError):
             build_recommendations(fixture(), selected_model_id='goalzero-13007')
         with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder)/'bad.csv'; path.write_text('model_id,width_m\nbroken,nan\n')
+            path = Path(folder) / 'bad.csv'
+            path.write_text('model_id,width_m\nbroken,nan\n')
             with self.assertRaises(InputError):
                 load_catalog(path)
 
