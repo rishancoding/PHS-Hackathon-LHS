@@ -543,6 +543,9 @@ for(const [index,id] of ['compare-a','compare-b'].entries())$(id).addEventListen
 
 function renderDashboard(result) {
   const impact=result.impact;
+  const annualSavings=number(impact?.annual_bill_savings_usd);
+  $('summary-savings').textContent=annualSavings==null ? '—' : `$${format(annualSavings)}`;
+  $('summary-savings-note').textContent=annualSavings==null ? 'Savings estimate unavailable' : `Per year · about $${format(annualSavings/12)}/month`;
   $('impact-savings').textContent=impact ? `$${format(impact.annual_bill_savings_usd)}/yr` : '—';
   $('impact-price').textContent=impact ? `At ${format(impact.electricity_price_cents_per_kwh,1)}¢/kWh (${impact.price_region})` : '';
   $('impact-payback').textContent=impact?.simple_payback_years ? `${format(impact.simple_payback_years,1)} years` : '—';
