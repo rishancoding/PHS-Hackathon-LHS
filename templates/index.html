@@ -14,6 +14,7 @@
   <script src="/static/app.js" defer></script>
   <script src="/static/address.js" defer></script>
   <script src="/static/projects.js" defer></script>
+  <script src="/static/advisor.js" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -159,6 +160,16 @@
     </div>
   </main>
   <footer>PhotoGrid · Solar estimates for planning. Verify your layout with an installer.</footer>
+  <div id="advisor" class="advisor" data-configured="{{ 'true' if advisor_configured else 'false' }}" hidden>
+    <section id="advisor-panel" class="advisor-panel" role="dialog" aria-labelledby="advisor-title" aria-describedby="advisor-subtitle" hidden>
+      <header class="advisor-header"><svg class="advisor-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM12 1v3M12 20v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M1 12h3M20 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg><div><h2 id="advisor-title">Solar advisor</h2><p id="advisor-subtitle">Knows this site, every panel model and how PhotoGrid calculates</p></div><button id="advisor-close" class="advisor-close" type="button" aria-label="Close advisor">×</button></header>
+      <div id="advisor-log" class="advisor-log" role="log" aria-live="polite" tabindex="0" aria-label="Advisor conversation"></div>
+      <div id="advisor-starters" class="advisor-starters" role="group" aria-label="Suggested questions"></div>
+      <form id="advisor-form" class="advisor-form"><label for="advisor-input" class="sr-only">Ask about this solar plan</label><textarea id="advisor-input" rows="1" maxlength="1000" placeholder="Ask about this plan…" enterkeyhint="send"></textarea><button id="advisor-send" class="primary" type="submit" aria-label="Send question"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></form>
+      <p class="advisor-disclaimer">AI answers can be wrong. Screening estimates, not a quote · DeepSeek</p>
+    </section>
+    <button id="advisor-toggle" class="advisor-toggle" type="button" aria-expanded="false" aria-controls="advisor-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg><span>Ask the advisor</span></button>
+  </div>
   <div id="loading-screen" class="loading-screen" role="dialog" aria-modal="true" aria-labelledby="loading-title" aria-describedby="loading-message" tabindex="-1" hidden>
     <div class="loading-card"><div class="loading-brand"><img src="/static/photogrid-mark.svg" width="48" height="48" alt=""><span>PhotoGrid</span></div>
       <div class="loading-track" aria-hidden="true"><span></span></div>

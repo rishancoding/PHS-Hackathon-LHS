@@ -35,7 +35,15 @@ After a search, results are split into tabs under an address header (street, cit
 - **Roofs:** **Look up roof addresses** names each roof by its street address (one Google request per roof); roofs are listed after the lookup. Uncheck roofs to leave them out of the plan. CSV and GeoJSON downloads.
 - **Search:** the search form, and **Update plan with these settings** to change budget, target, panel-area cap, priority or system efficiency without new Google requests.
 
-Other features: address suggestions as you type, recent searches as suggestions, saved searches that reopen after a restart (newest first, one per address and radius, with date), a loading screen with real progress stages, the search time in the header, and a multi-page **Download PDF** report.
+Other features: address suggestions as you type, recent searches as suggestions, saved searches that reopen after a restart (newest first, one per address and radius, with date), a loading screen with real progress stages, the search time in the header, a multi-page **Download PDF** report, and the **Solar advisor** chat.
+
+## Solar advisor (DeepSeek)
+
+After a search, **Ask the advisor** (bottom right) opens a chat that answers questions about the plan on screen: whether it is a good investment, why one panel ranks above another, how to meet the energy target, and what to ask installers. Each question sends the advisor the current site data: address, roofs, the selected layout and its cost and savings, every compared model, the full 24-model panel catalog, and PhotoGrid's formulas and sources. Answers quote those numbers instead of guessing.
+
+For "what if" questions (a different budget, energy target, priority, panel-area cap or system efficiency), the advisor reruns PhotoGrid's own planner on a copy of the site and shows **Ran PhotoGrid's planner: …** under its answer. The plan on screen does not change; use **Update plan with these settings** to apply a change. The conversation follows plan updates, such as previewing a different model.
+
+Add `DEEPSEEK_API_KEY` to the ignored `.env` file and restart PhotoGrid. Optional settings: `DEEPSEEK_MODEL` (default `deepseek-v4-flash`) and `DEEPSEEK_REASONING_EFFORT` (default `high`; `low` answers about twice as fast but checks its work less). The key stays on the server: it is never sent to the browser or saved in results. Answers take about 5–15 seconds, and each costs a fraction of a cent. The server allows 20 questions a minute across all visitors. AI answers can be wrong, and like the rest of PhotoGrid they are screening estimates, not quotes.
 
 ## Saved projects with MongoDB Atlas
 
@@ -95,7 +103,7 @@ The local server accepts only localhost and rejects POST requests from other sit
 .venv/bin/python -m unittest test_panel_plan     # one module
 ```
 
-Tests use synthetic GeoTIFFs and mocked Google responses, so they make no paid requests. Main modules: `solar_address.py` (geocoding, validation, request parameters), `process_solar_layers.py` (downloads, saved-layer reuse, roof detection), `existing_panels.py` (panel detection), `panel_plan.py` (placement), `panel_recommendations.py` (catalog comparison and ranking), `installation_cost.py` and `impact.py` (estimates), `roof_details.py` (addresses, findings, exports), `solar_report.py` (PDF), `roofready_app.py` (Flask server), and `static/` + `templates/` (the page). See `CLAUDE.md` for an architecture overview and `docs/PITCH.md` for the demo plan.
+Tests use synthetic GeoTIFFs and mocked Google responses, so they make no paid requests. Main modules: `solar_address.py` (geocoding, validation, request parameters), `process_solar_layers.py` (downloads, saved-layer reuse, roof detection), `existing_panels.py` (panel detection), `panel_plan.py` (placement), `panel_recommendations.py` (catalog comparison and ranking), `installation_cost.py` and `impact.py` (estimates), `roof_details.py` (addresses, findings, exports), `solar_report.py` (PDF), `solar_advisor.py` (advisor chat), `roofready_app.py` (Flask server), and `static/` + `templates/` (the page). See `CLAUDE.md` for an architecture overview and `docs/PITCH.md` for the demo plan.
 
 ### Command line
 

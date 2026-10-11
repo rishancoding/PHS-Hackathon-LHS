@@ -31,6 +31,11 @@ IP addresses in Atlas. Keep the URI out of the Blueprint and Git. Atlas retains
 planning snapshots across redeploys; aerial files still depend on the service's
 file storage. This is a shared demo, so visitors can see the saved projects.
 
+To enable the solar advisor on Render, set **DEEPSEEK_API_KEY** as a secret
+environment variable; keep it out of the Blueprint and Git. Visitors' questions are
+billed to that DeepSeek account, and the server allows 20 questions a minute across
+all visitors.
+
 This is a shared hackathon demo: saved searches and reports are accessible to
 other visitors. Use the sample area or public addresses. The page shows this
 notice when hosted. Free hosting has ephemeral files; saved imagery and searches

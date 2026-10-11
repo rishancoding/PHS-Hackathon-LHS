@@ -24,6 +24,7 @@ from panel_recommendations import build_recommendations, validate_recommendation
 from solar_report import create_pdf_report
 from roof_details import add_roof_addresses, describe_results, save_report
 from project_store import configured_store, ProjectStorageError, SAFE_FOLDER, project_summary
+from solar_advisor import AdvisorError, configured_advisor, run_scenario, validate_messages
 
 ROOT = Path(__file__).resolve().parent
 
@@ -42,7 +43,7 @@ def resolve_key(supplied=""):
     return (supplied or "").strip() or os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
 
 
-def create_app(output_root=None, project_store=None):
+def create_app(output_root=None, project_store=None, advisor=None):
     app = Flask(__name__)
     render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
     trusted_hosts = ["localhost", "127.0.0.1"]
@@ -55,6 +56,8 @@ def create_app(output_root=None, project_store=None):
     output_root = Path(output_root or os.environ.get("PHOTOGRID_OUTPUT_ROOT") or ROOT / "outputs")
     # Explicit False lets offline tests opt out even when the laptop has Atlas configured.
     store = configured_store() if project_store is None else project_store or None
+    # Same pattern: tests pass False or a fake advisor so they never call DeepSeek.
+    advisor = configured_advisor() if advisor is None else advisor or None
     jobs = {}
     lock = Lock()
     executor = ThreadPoolExecutor(max_workers=1)
@@ -111,7 +114,9 @@ def create_app(output_root=None, project_store=None):
     @app.get("/photogrid")
     def index():
         key = resolve_key()
-        return render_template("index.html", configured=bool(key), hosted=bool(render_host))
+        return render_template(
+            "index.html", configured=bool(key), hosted=bool(render_host), advisor_configured=advisor is not None
+        )
 
     @app.get("/health")
     def health():
@@ -169,6 +174,35 @@ def create_app(output_root=None, project_store=None):
         with lock:
             jobs[job_id] = {"status": "complete", "message": "Saved project opened", "result": result}
         return jsonify(job_id=job_id, result=result, project=project_summary(document))
+
+    @app.post("/api/advisor/<job_id>")
+    def ask_advisor(job_id):
+        if advisor is None:
+            return jsonify(error="The solar advisor is not configured. Add DEEPSEEK_API_KEY to .env and restart."), 503
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict):
+            return jsonify(error="Expected a JSON request."), 400
+        try:
+            messages = validate_messages(body.get("messages"))
+        except InputError as exc:
+            return jsonify(error=str(exc)), 400
+        with lock:
+            job = jobs.get(job_id)
+            if job is None:
+                abort(404)
+            if job["status"] != "complete":
+                return jsonify(error="Wait for the current update to finish, then ask again."), 409
+            result = deepcopy(job["result"])
+
+        def simulate(arguments):
+            if result.get("project_assets", {}).get("replanning_available") is False:
+                raise InputError("What-if scenarios need this project's sunlight files, which are unavailable.")
+            return run_scenario(result, sunlight_for(job_id), arguments)
+
+        try:
+            return jsonify(advisor.reply(result, messages, simulate))
+        except AdvisorError as exc:
+            return jsonify(error=str(exc)), exc.status
 
     @app.post("/api/address-suggestions")
     def suggest_addresses():
@@ -426,6 +460,7 @@ def create_app(output_root=None, project_store=None):
 
     app.extensions["roofready_executor"] = executor
     app.extensions["photogrid_projects"] = store
+    app.extensions["photogrid_advisor"] = advisor
     return app
 
 

@@ -12,7 +12,7 @@ let excludedRoofIds=new Set(), comparisonIds=[], comparisonJob=null;
 // No-panel zones: [left, top, right, bottom] in preview pixels. Saved = applied to the current plan.
 let savedZones=[], draftZones=[], zonesJob=null, drawMode=false, zoneStart=null, zoneBusy=false;
 const canReplan=()=>currentResult?.project_assets?.replanning_available!==false;
-function busy(value) { zoneBusy=value; $('draw-zone').disabled=value || !canReplan(); renderZones(); $('analyze').disabled=value; $('demo-button').disabled=value; $('lookup-addresses').disabled=value; $('replan').disabled=value || !canReplan(); $('include-all-roofs').disabled=value || !canReplan(); $('budget-includes-installation').disabled=value || !canReplan(); document.querySelectorAll('#roof-selection-options input').forEach(input=>input.disabled=value || !canReplan()); window.photogridProjects?.setBusy(value); }
+function busy(value) { zoneBusy=value; $('draw-zone').disabled=value || !canReplan(); renderZones(); $('analyze').disabled=value; $('demo-button').disabled=value; $('lookup-addresses').disabled=value; $('replan').disabled=value || !canReplan(); $('include-all-roofs').disabled=value || !canReplan(); $('budget-includes-installation').disabled=value || !canReplan(); document.querySelectorAll('#roof-selection-options input').forEach(input=>input.disabled=value || !canReplan()); window.photogridProjects?.setBusy(value); window.photogridAdvisor?.setBusy(value); }
 function error(message) { $('error').textContent=message; $('error').hidden=false; toast(''); }
 let toastTimer;
 // Short status toast: progress messages stay until replaced; results fade out on their own.
@@ -213,6 +213,7 @@ function render(result,job,preserveView=false) {
   renderRecommendations(result.panel_recommendations);
   renderDashboard(result);
   window.photogridProjects?.render(result,job);
+  window.photogridAdvisor?.render(result,job);
   renderCatalogTable(result.panel_recommendations);
   $('findings').textContent=result.report?.findings || 'Update the panel plan to generate a summary for this saved search.';
   $('next-steps').textContent=result.report?.next_steps || 'Verify roof addresses and usable area with a qualified solar installer before proceeding.';
