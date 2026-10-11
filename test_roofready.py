@@ -35,10 +35,10 @@ class ProcessingTests(unittest.TestCase):
         for roof in result["roofs"]:
             props = roof["properties"]
             self.assertAlmostEqual(props["estimated_energy_kwh_year"],
-                                   props["area_m2"] * .65 * .2 * props["annual_yield_kwh_per_kw"], delta=1)
+                                   props["area_m2"] * .65 * .2 * props["annual_yield_kwh_per_kw"] * .85, delta=1)
             self.assertTrue(shape(roof["geometry"]).is_valid)
             self.assertLess(abs(props["longitude"] + 122.084), .002)
-        for name in ("aerial.png", "sunlight.png", "roofs.csv", "roofs.geojson", "results.json", "clipped_dsm.tif"):
+        for name in ("aerial.jpg", "sunlight.webp", "roofs.csv", "roofs.geojson", "results.json", "clipped_dsm.tif"):
             self.assertTrue((self.directory / name).is_file())
         geojson = json.loads((self.directory / "roofs.geojson").read_text())
         self.assertEqual(len(geojson["features"]), 6)
@@ -158,7 +158,7 @@ class DashboardTests(unittest.TestCase):
                 proposal = replanned.get_json()["proposal"]
                 self.assertGreater(proposal["panel_count"], 0)
                 self.assertIsNotNone(proposal["panel_model"])
-                self.assertEqual(len(replanned.get_json()["panel_recommendations"]["recommendations"]), 15)
+                self.assertEqual(len(replanned.get_json()["panel_recommendations"]["recommendations"]), 14)
                 self.assertLessEqual(proposal["estimated_cost_usd"], 2000)
                 self.assertFalse(proposal["target_met"])
                 saved = json.loads((Path(directory) / job / "results.json").read_text())
@@ -189,7 +189,7 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(invalid.status_code, 400)
                 persisted = json.loads((Path(directory) / job / "results.json").read_text())
                 self.assertEqual(persisted["panel_recommendations"]["selected_model_id"], chosen["model"]["model_id"])
-                for filename in ("aerial.png", "sunlight.png", "roofs.csv", "roofs.geojson", "summary.txt"):
+                for filename in ("aerial.jpg", "sunlight.webp", "roofs.csv", "roofs.geojson", "summary.txt"):
                     response = client.get(f"/results/{job}/{filename}")
                     self.assertEqual(response.status_code, 200)
                     response.close()

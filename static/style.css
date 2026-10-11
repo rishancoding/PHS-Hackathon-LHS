@@ -474,3 +474,13 @@ summary:hover { color: var(--green); }
 @media (max-width: 600px) { .data-panel { padding: 20px; } .top-panels { margin: 14px; } }
 .top-panel > * { flex-shrink: 0; }
 .top-panel-tag { position: absolute; bottom: 26px; right: 10px; padding: 1px 8px; border-radius: 999px; background: white; border: 1px solid var(--line); color: var(--ink); font-size: 10.5px; font-weight: 600; }
+
+/* Impact card spans the Cost & energy row */
+.impact-panel { grid-column: 1 / -1; }
+.impact-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 8px 0 14px; }
+.impact-grid > div { padding: 14px 16px; border-radius: 8px; background: var(--soft); }
+.impact-grid span, .impact-grid small { display: block; color: var(--muted); font-size: 12px; }
+.impact-grid strong { display: block; margin: 4px 0; font-size: 22px; font-weight: 650; letter-spacing: -.3px; }
+.source-list { padding-left: 18px; font-size: 12.5px; color: var(--muted); }
+.source-list li { margin-bottom: 6px; }
+@media (max-width: 760px) { .impact-grid { grid-template-columns: 1fr 1fr; } }

@@ -33,11 +33,17 @@ def font(size, bold=False):
 
 
 def annotated_map(result, directory):
-    path = Path(directory) / 'aerial.png'
+    path = Path(directory) / result.get('preview_files', {}).get('aerial', 'aerial.png')
     if not path.is_file():
         return None
     with Image.open(path) as source:
+        has_alpha = 'A' in source.getbands()
         picture = source.convert('RGBA')
+    if not has_alpha:
+        # JPEG previews: restore the circular search area.
+        mask = Image.new('L', picture.size, 0)
+        ImageDraw.Draw(mask).ellipse((0, 0, picture.width - 1, picture.height - 1), fill=255)
+        picture.putalpha(mask)
     # Render overlays at report resolution so sub-pixel modules remain visible.
     scale = 1200 / max(picture.size)
     picture = picture.resize((max(1, round(picture.width * scale)), max(1, round(picture.height * scale))),

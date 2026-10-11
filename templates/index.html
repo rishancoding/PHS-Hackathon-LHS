@@ -56,7 +56,7 @@
                 <div class="zone-heading"><strong>No-panel zones</strong><span id="zone-status" class="hint" role="status" aria-live="polite"></span></div>
                 <p id="zone-help" class="hint">Drag on the map to mark areas without panels.</p>
                 <ul id="zone-list" class="zone-list"></ul>
-                <div class="zone-actions"><button id="apply-zones" class="primary" type="button" disabled>Apply &amp; re-plan</button><button id="clear-zones" class="secondary" type="button" disabled>Clear</button></div>
+                <div class="zone-actions"><button id="apply-zones" class="primary" type="button" disabled>Apply &amp; re-plan</button><button id="clear-zones" class="secondary" type="button" disabled>Clear</button><button id="zone-roof" class="secondary" type="button" disabled title="Select a roof first (click it or press Enter on it)">Zone over selected roof</button></div>
               </div>
               <p id="panel-map-scale" class="hint map-scale" role="status" aria-live="polite"></p>
               <div id="selected-roof" class="selected-roof" hidden><h3 id="selected-address"></h3><p id="selected-roof-info" class="hint"></p></div>
@@ -78,9 +78,9 @@
           <label id="budget-label" for="budget">Budget ($)</label><input id="budget" type="number" min="0.01" step="any" value="25000" required>
           <label class="budget-toggle" for="budget-includes-installation"><input id="budget-includes-installation" type="checkbox" checked aria-describedby="budget-scope-help"> Budget includes installation</label><p id="budget-scope-help" class="sr-only"></p>
           <label for="energy-target">Yearly energy need (kWh)</label><input id="energy-target" type="number" min="0.01" step="any" value="10000" required>
-          <label for="space-limit">Max panel area (m²)</label><input id="space-limit" type="number" min="0.01" step="any" placeholder="Optional">
+          <div class="input-row"><div><label for="space-limit">Max panel area</label><input id="space-limit" type="number" min="0.01" step="any" placeholder="Optional"></div><div><label for="space-unit">Unit</label><select id="space-unit"><option value="m2">m²</option><option value="ft2">ft²</option></select></div></div>
           <label for="panel-priority">Priority</label><select id="panel-priority"><option value="balanced">Balanced</option><option value="lowest_cost">Lowest cost</option><option value="space_efficiency">Least roof space</option><option value="longer_warranty">Longest warranty</option></select>
-          <details><summary>Assumptions</summary><label class="budget-toggle" for="reuse-imagery"><input id="reuse-imagery" type="checkbox" checked> Reuse saved imagery for repeat searches</label><label for="usable">Usable roof fraction</label><input id="usable" type="number" min="0.01" max="1" step="0.01" value="0.65"><label for="density">Roof potential density (kW/m²)</label><input id="density" type="number" min="0.01" max="1" step="0.01" value="0.20"></details>
+          <details><summary>Assumptions</summary><label class="budget-toggle" for="reuse-imagery"><input id="reuse-imagery" type="checkbox" checked> Reuse saved imagery for repeat searches</label><label for="usable">Usable roof fraction</label><input id="usable" type="number" min="0.01" max="1" step="0.01" value="0.65"><label for="density">Roof potential density (kW/m²)</label><input id="density" type="number" min="0.01" max="1" step="0.01" value="0.20"><label for="derate">System efficiency (inverter &amp; wiring losses)</label><input id="derate" type="number" min="0.5" max="1" step="0.01" value="0.85"></details>
           <details {% if not configured %}open{% endif %}><summary>Google API key {% if configured %}· configured{% endif %}</summary><label for="api-key">Key for this analysis</label><input id="api-key" type="password" autocomplete="off" placeholder="{% if configured %}Optional override{% else %}Paste your API key{% endif %}"></details>
 
           <button id="analyze" type="submit" class="primary">Find roofs and panels</button>
@@ -99,6 +99,15 @@
             </section>
             <section class="card data-panel" aria-labelledby="performance-heading"><div class="section-header"><h2 id="performance-heading">Energy</h2></div>
               <dl class="key-values"><div><dt>Yearly output</dt><dd id="performance-energy">—</dd></div><div><dt>Target</dt><dd id="performance-target">—</dd></div><div><dt>Roof area used</dt><dd id="performance-area">—</dd></div><div><dt>Sunlight yield</dt><dd id="performance-yield">—</dd></div></dl>
+            </section>
+            <section class="card data-panel impact-panel" aria-labelledby="impact-heading"><div class="section-header"><h2 id="impact-heading">Impact</h2></div>
+              <div class="impact-grid">
+                <div><span>Bill savings</span><strong id="impact-savings">—</strong><small id="impact-price"></small></div>
+                <div><span>Simple payback</span><strong id="impact-payback">—</strong><small>No incentives included</small></div>
+                <div><span>CO₂ avoided</span><strong id="impact-co2">—</strong><small>Tonnes per year</small></div>
+                <div><span>Homes' worth of power</span><strong id="impact-homes">—</strong><small>Average U.S. home</small></div>
+              </div>
+              <p class="hint">Estimates: each kWh offsets one at your state's 2025 average residential price (EIA); CO₂ uses EPA eGRID's non-baseload rate. The federal 25D solar credit ended for systems placed in service after 2025.</p>
             </section>
           </div>
           <details id="panel-recommendation-section" class="card recommendation-section result-section" data-tab="panels" open>
@@ -122,7 +131,14 @@
             <details id="plan-section" class="proposal-card comparison"><summary>Selected layout &amp; cost assumptions</summary><div class="section-body"><div class="proposal-metrics"><div><span>Proposed panels</span><strong id="panel-count">—</strong></div><div><span>Installed estimate (USD)</span><strong id="plan-cost">—</strong></div><div><span>Annual output (kWh)</span><strong id="plan-energy">—</strong></div></div><p id="plan-status" role="status"></p><p id="plan-notes" class="hint"></p><p id="recommendation-context" class="hint"></p><p id="recommendation-excluded" class="hint"></p><p id="recommendation-notes" class="hint"></p></div></details>
             <details class="overview-section comparison"><summary>Whole search area totals</summary><div class="section-body"><div class="metrics"><div><span>Candidate roofs</span><strong id="roof-count">—</strong></div><div><span>Total roof potential</span><strong id="total-energy">—</strong><small>kWh / year · all candidates</small></div><div><span>Sunlight data coverage</span><strong id="coverage">—</strong></div></div></div></details>
             <details class="search-report comparison"><summary>Search findings &amp; next steps</summary><div class="section-body"><h3>Search findings</h3><p id="findings"></p><h3>Next steps</h3><p id="next-steps"></p><p class="hint">Addresses are approximate Google matches.</p></div></details>
-            <div class="section-body"><h3>Data &amp; limitations</h3><p id="assumptions"></p><p>Detection uses Google’s rooftop mask and connected regions. Touching roofs may merge. These are screening estimates using horizontal footprint area; they don’t assess roof condition, slope, setbacks, or installation readiness. Missing sunlight data is excluded from the energy estimate. A “partial” flag means the roof reaches the search boundary. Imagery date and attribution appear beneath the map.</p></div>
+            <div class="section-body"><h3>Sources</h3><ul class="source-list">
+              <li>Installed cost: NREL Q1 2024 U.S. residential PV benchmark, $3.15/W (2023 dollars), with illustrative regional multipliers and a $0.35/W module allowance (modeling assumption). <a href="https://www.nrel.gov/docs/fy25osti/92257.pdf" target="_blank" rel="noopener noreferrer">NREL report ↗</a></li>
+              <li>Sunlight, roofs and imagery: Google Solar API data layers. System efficiency 0.85 (inverter, wiring and soiling losses), matching Google's default.</li>
+              <li>Electricity prices: EIA residential average price by state, 2025 (preliminary). <a href="https://www.eia.gov/electricity/data.php" target="_blank" rel="noopener noreferrer">EIA ↗</a></li>
+              <li>CO₂: EPA eGRID2023 U.S. non-baseload rate, 1,372 lb/MWh. <a href="https://www.epa.gov/egrid/summary-data" target="_blank" rel="noopener noreferrer">EPA ↗</a> · Average home: EIA, about 10,400 kWh/year.</li>
+              <li>Panels: manufacturer datasheets and retailer prices in data/panel_catalog.csv (checked 2026-10-10/11).</li>
+              <li>Existing-panel detection: color check; on 48 hand-labeled roofs from 7 sites it was right 73% of the time (68% precision, 65% recall). Labels were made by eye, not verified.</li>
+            </ul><h3>Data &amp; limitations</h3><p id="assumptions"></p><p>Detection uses Google’s rooftop mask and connected regions. Touching roofs may merge. These are screening estimates using horizontal footprint area; they don’t assess roof condition, slope, setbacks, or installation readiness. Missing sunlight data is excluded from the energy estimate. A “partial” flag means the roof reaches the search boundary. Imagery date and attribution appear beneath the map.</p></div>
           </details>
         </div>
       </section>

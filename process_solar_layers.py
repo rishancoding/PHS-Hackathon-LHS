@@ -25,6 +25,7 @@ from shapely.geometry import Point, mapping, shape
 from shapely import transform as shapely_transform
 
 from existing_panels import DETECTOR as EXISTING_PANEL_DETECTOR, detect_existing_panels
+from panel_plan import DEFAULT_SYSTEM_DERATE
 from solar_address import DEFAULT_API_KEY, InputError, SOLAR_URL, get_json, https_context, prepare_request
 from roof_details import save_report
 
@@ -120,7 +121,7 @@ def metric_grid(latitude, longitude, radius, pixel_size):
 
 
 def process_layers(paths, request, directory, usable_fraction=0.65, panel_kw_per_m2=0.2,
-                   min_area_m2=10, progress=lambda message: None, demo=False):
+                   min_area_m2=10, progress=lambda message: None, demo=False, system_derate=DEFAULT_SYSTEM_DERATE):
     if not 0 < usable_fraction <= 1 or not 0 < panel_kw_per_m2 <= 1:
         raise InputError("Usable fraction and panel density must be greater than 0 and at most 1.")
     if not math.isfinite(min_area_m2) or min_area_m2 <= 0:
@@ -181,7 +182,7 @@ def process_layers(paths, request, directory, usable_fraction=0.65, panel_kw_per
         # Use only the area with valid sunlight; do not extrapolate missing flux.
         analyzed_area = polygon.area * coverage
         capacity = analyzed_area * usable_fraction * panel_kw_per_m2
-        energy = capacity * mean_flux if mean_flux is not None else None
+        energy = capacity * mean_flux * system_derate if mean_flux is not None else None
         centroid = transform_geometry(to_wgs84, polygon.centroid)
         props = {
             "id": f"roof-{label}", "rank": None,
@@ -223,7 +224,8 @@ def process_layers(paths, request, directory, usable_fraction=0.65, panel_kw_per
         roof["properties"]["existing_panel_area_m2"] = round(existing_area[roof["properties"]["id"]], 1)
     image = np.clip(np.nan_to_num(np.moveaxis(rgb, 0, -1)), 0, 255).astype(np.uint8)
     alpha = (circle_pixels & np.all(np.isfinite(rgb), axis=0)).astype(np.uint8) * 255
-    Image.fromarray(np.dstack([image, alpha])).save(directory / "aerial.png")
+    # Compact previews: the map frame is circular, so the photo needs no alpha (JPEG, ~10x smaller).
+    Image.fromarray(np.where(alpha[..., None] > 0, image, 226).astype(np.uint8)).save(directory / "aerial.jpg", quality=85, optimize=True)
     # A separate annual-yield overlay makes differences in sunlight visible.
     sunlight = valid_flux & circle_pixels
     if sunlight.any():
@@ -232,7 +234,7 @@ def process_layers(paths, request, directory, usable_fraction=0.65, panel_kw_per
     else:
         normalized = np.zeros_like(annual)
     heat = np.stack([255 * normalized, 90 + 140 * normalized, 160 * (1 - normalized), sunlight * 180], axis=-1).astype(np.uint8)
-    Image.fromarray(heat).save(directory / "sunlight.png")
+    Image.fromarray(heat).save(directory / "sunlight.webp", quality=80, method=4)
     for name, data in (("roof_mask", np.where(circle_pixels, roof_mask, np.nan)),
                        ("annual_flux", np.where(circle_pixels, annual, np.nan)),
                        ("dsm", np.where(circle_pixels, dsm, np.nan))):
@@ -243,7 +245,7 @@ def process_layers(paths, request, directory, usable_fraction=0.65, panel_kw_per
     result = {
         "request": request, "demo": demo, "detector": "Google rooftop mask + connected components",
         "assumptions": {"usable_roof_fraction": usable_fraction, "panel_kw_per_m2": panel_kw_per_m2,
-                        "minimum_roof_area_m2": min_area_m2},
+                        "minimum_roof_area_m2": min_area_m2, "system_derate": system_derate},
         "analysis": {"resolution_m": grid["resolution"], "crs": grid["crs"].to_string(),
                      "raster_width": grid["width"], "raster_height": grid["height"],
                      "flux_coverage_percent": round(float(sunlight.sum() / circle_pixels.sum() * 100), 1)},
@@ -251,10 +253,11 @@ def process_layers(paths, request, directory, usable_fraction=0.65, panel_kw_per
                     "estimated_energy_kwh_year": round(sum(r["properties"]["estimated_energy_kwh_year"] or 0 for r in roofs), 1)},
         "roofs": roofs,
         "existing_panels": existing_panels, "existing_panel_detector": EXISTING_PANEL_DETECTOR,
+        "preview_files": {"aerial": "aerial.jpg", "sunlight": "sunlight.webp"},
         "notes": [
             "Candidate roof regions are not verified building identities; touching roofs may merge.",
             "Area is horizontal footprint within the radius, not sloped roof surface area.",
-            "Energy = sunlight-covered area × usable fraction × panel kW/m² × annual yield (kWh/kW/year).",
+            "Energy = sunlight-covered area × usable fraction × panel kW/m² × annual yield (kWh/kW/year) × system efficiency.",
             "Missing sunlight is excluded. Roof portions beyond the radius are excluded and flagged.",
             "Screening estimates do not establish structural condition, setbacks, or installation readiness.",
             "Possible existing panels are flagged by color, not a trained model; verify them on the aerial image.",

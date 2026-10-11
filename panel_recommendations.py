@@ -5,13 +5,16 @@ import hashlib
 import json
 from pathlib import Path
 
+from impact import estimate_impact
 from installation_cost import estimate_installation_cost
 from panel_plan import propose_panels, validate_plan_inputs
 from solar_address import InputError
 
-CATALOG = Path(__file__).with_name('panel_catalog (2).csv')
+CATALOG = Path(__file__).with_name('data') / 'panel_catalog.csv'
 PRIORITIES = {'balanced', 'lowest_cost', 'space_efficiency', 'longer_warranty'}
 MAX_BLOCKED_ZONES = 200
+# Hobby-size modules (5-60 W) would need hundreds of panels on a roof.
+MIN_ROOFTOP_WATTS = 100
 # Explicit modeling allowance, not a measured module price or local labor quote.
 REFERENCE_MODULE_ALLOWANCE_PER_WATT = .35
 
@@ -21,7 +24,7 @@ def load_catalog(path=CATALOG):
         with Path(path).open(newline='', encoding='utf-8-sig') as file:
             rows = list(csv.DictReader(file))
     except (OSError, csv.Error) as exc:
-        raise InputError('Panel catalog could not be read. Check panel_catalog (2).csv.') from exc
+        raise InputError('Panel catalog could not be read. Check data/panel_catalog.csv.') from exc
     models, ids = [], set()
     for row in rows:
         model = dict(row)
@@ -91,7 +94,17 @@ def validate_recommendation_inputs(body):
                 raise InputError('No-panel zones need a width and height greater than zero.')
             parsed.append([left, top, right, bottom])
         zones = parsed
-    values.update(priority=priority, space_limit_m2=space, selected_model_id=selected,
+    derate = body.get('system_derate')
+    if derate not in (None, ''):
+        try:
+            derate = float(derate)
+        except (TypeError, ValueError):
+            raise InputError('System efficiency must be a number between 0.5 and 1.') from None
+        if isinstance(body.get('system_derate'), bool) or not math.isfinite(derate) or not .5 <= derate <= 1:
+            raise InputError('System efficiency must be between 0.5 and 1.')
+    else:
+        derate = None
+    values.update(priority=priority, space_limit_m2=space, selected_model_id=selected, system_derate=derate,
                   excluded_roof_ids=list(dict.fromkeys(excluded)) if excluded is not None else None,
                   blocked_zones=zones)
     return values
@@ -99,12 +112,14 @@ def validate_recommendation_inputs(body):
 
 def build_recommendations(result, budget_usd=25000, energy_target_kwh_year=10000,
                           priority='balanced', space_limit_m2=None, selected_model_id=None, catalog=None, excluded_roof_ids=None, reuse_comparison=False, budget_includes_installation=True,
-                          blocked_zones=None):
+                          blocked_zones=None, system_derate=None, sunlight=None):
     inputs = validate_recommendation_inputs(dict(budget_usd=budget_usd, energy_target_kwh_year=energy_target_kwh_year,
                                                priority=priority, space_limit_m2=space_limit_m2,
                                                selected_model_id=selected_model_id, excluded_roof_ids=excluded_roof_ids,
                                                budget_includes_installation=budget_includes_installation,
-                                               blocked_zones=blocked_zones))
+                                               blocked_zones=blocked_zones, system_derate=system_derate))
+    if inputs['system_derate'] is not None:
+        result['assumptions']['system_derate'] = inputs['system_derate']
     excluded_roof_ids = inputs['excluded_roof_ids']
     if excluded_roof_ids is None:
         excluded_roof_ids = result.get('roof_selection', {}).get('excluded_roof_ids', [])
@@ -130,10 +145,14 @@ def build_recommendations(result, budget_usd=25000, energy_target_kwh_year=10000
     planning_result = {**result, 'roofs': [roof for roof in result['roofs']
                                         if roof['properties']['id'] not in excluded_roof_ids]}
     models = load_catalog() if catalog is None else catalog
-    eligible = [m for m in models if m.get('panel_type') == 'rigid']
-    excluded = [{'model_id': m['model_id'], 'model_name': m['model_name'],
-                 'reason': 'Portable/foldable module: not compared as permanent roof hardware.' if m.get('panel_type') == 'portable_foldable'
-                 else 'Flexible or unclassified module: mounting compatibility needs a separate model.'}
+    eligible = [m for m in models if m.get('panel_type') == 'rigid' and m['rated_power_w'] >= MIN_ROOFTOP_WATTS]
+    def exclusion(m):
+        if m.get('panel_type') == 'portable_foldable':
+            return 'Portable/foldable module: not compared as permanent roof hardware.'
+        if m.get('panel_type') == 'rigid':
+            return f'Under {MIN_ROOFTOP_WATTS} W: too small for a practical rooftop array.'
+        return 'Flexible or unclassified module: mounting compatibility needs a separate model.'
+    excluded = [{'model_id': m['model_id'], 'model_name': m['model_name'], 'reason': exclusion(m)}
                 for m in models if m not in eligible]
     if not eligible:
         raise InputError('Catalog has no rigid modules for rooftop comparison.')
@@ -147,7 +166,7 @@ def build_recommendations(result, budget_usd=25000, energy_target_kwh_year=10000
         plan = propose_panels(planning_result, budget_usd, energy_target_kwh_year,
                               installed_cost_per_watt=unit_cost / model['rated_power_w'],
                               panel_model=model, space_limit_m2=space_limit_m2, _geometry_cache=geometry_cache,
-                              budget_includes_installation=budget_includes_installation)
+                              budget_includes_installation=budget_includes_installation, sunlight=sunlight)
         plan['installation_estimate'] = {**geographic, 'installed_cost_per_watt': plan['installed_cost_per_watt'],
                                         'low_cost_per_watt': plan['installed_cost_per_watt'] * .75,
                                         'high_cost_per_watt': plan['installed_cost_per_watt'] * 1.25,
@@ -168,7 +187,7 @@ def build_recommendations(result, budget_usd=25000, energy_target_kwh_year=10000
                         roof['properties']['flux_coverage_percent'], roof['properties'].get('annual_yield_kwh_per_kw'),
                         roof.get('preview_geometry')) for roof in result['roofs']],
                       [feature.get('preview_geometry') for feature in result.get('existing_panels', [])],
-                      [zone['bounds'] for zone in zones]]
+                      [zone['bounds'] for zone in zones], sunlight is not None]
     signature = hashlib.sha256(json.dumps(signature_data, sort_keys=True, allow_nan=False).encode()).hexdigest()
     previous = result.get('panel_recommendations', {})
     if reuse_comparison and previous.get('comparison_signature') == signature:
@@ -284,10 +303,11 @@ def apply_selection(result, plan, known_roofs, excluded_roof_ids):
     result['roof_selection'] = {'excluded_roof_ids': excluded_roof_ids,
                                 'included_roof_ids': sorted(known_roofs - set(excluded_roof_ids))}
     plan['placement_explanation'] = (
-        'The planner considers only included roofs with usable sunlight data and tries higher roof-average annual yield first. '
-        'On each roof it tests a grid in both 90-degree orientations, keeps rectangles fully inside the detected outline, '
-        'and uses 0.2 m gaps plus the usable-area and sunlight-coverage limits. It stops at the energy target, budget, '
-        'module-area cap, or available space. Exact positions come from geometric fit, not a point-by-point shading optimum. '
-        'This is a greedy screening layout; obstructions, slope and required setbacks still need site verification.')
+        'The planner considers only included roofs with usable sunlight data, sunniest roofs first. '
+        'On each roof it aligns a grid with the building, tests both module orientations, keeps rectangles fully inside the outline '
+        'with 0.2 m gaps, and fills the sunniest spots first using Google\'s per-pixel sunlight. It stops at the energy target, '
+        'budget, module-area cap or available space. Rooftop equipment, slope and required setbacks are not detected: '
+        'draw no-panel zones over them. This is a screening layout, not an installation design.')
     plan['roof_placement_reasons'] = placement_reasons(result, plan)
     result['proposal'] = plan
+    result['impact'] = estimate_impact(plan, result.get('request', {}).get('state'))

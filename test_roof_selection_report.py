@@ -43,7 +43,7 @@ class RoofSelectionTests(unittest.TestCase):
         reasons = {r['roof_id']: r for r in filtered['proposal']['roof_placement_reasons']}
         self.assertTrue(reasons['roof-2']['excluded'])
         self.assertIn('1,000 kWh', reasons['roof-1']['reason'])
-        self.assertIn('not a point-by-point', filtered['proposal']['placement_explanation'])
+        self.assertIn('not an installation design', filtered['proposal']['placement_explanation'])
         persisted = build_recommendations(data, 5000, 600, selected_model_id='compact', catalog=catalog)
         self.assertEqual(persisted['roof_selection']['excluded_roof_ids'], ['roof-2'])
         self.assertTrue(all(p['roof_id'] == 'roof-1' for p in persisted['proposal']['panels']))

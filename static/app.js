@@ -1,4 +1,5 @@
 const $ = id => document.getElementById(id);
+const SQ_FT = 0.09290304; // m² per ft²
 const number = value => value == null || value === '' || typeof value === 'boolean' || !Number.isFinite(Number(value)) ? null : Number(value);
 const format = (value, digits=0) => number(value) == null ? 'Unavailable' : Number(value).toLocaleString(undefined, {maximumFractionDigits:digits});
 const dollars = value => number(value) == null ? '—' : `$${format(value)}`;
@@ -20,8 +21,8 @@ function toast(message,sticky=false){
 }
 function planInputs() {
   return {budget_usd:Number($('budget').value), budget_includes_installation:$('budget-includes-installation').checked, energy_target_kwh_year:Number($('energy-target').value),
-    space_limit_m2:$('space-limit').value.trim() ? Number($('space-limit').value) : null, priority:$('panel-priority').value,
-    excluded_roof_ids:[...excludedRoofIds], blocked_zones:savedZones};
+    space_limit_m2:$('space-limit').value.trim() ? Number($('space-limit').value)*($('space-unit').value==='ft2' ? SQ_FT : 1) : null, priority:$('panel-priority').value,
+    excluded_roof_ids:[...excludedRoofIds], blocked_zones:savedZones, system_derate:Number($('derate').value) || null};
 }
 const zoneKey=zone=>zone.map(v=>v.toFixed(2)).join(',');
 function zonesDirty(){return draftZones.map(zoneKey).join('|')!==savedZones.map(zoneKey).join('|');}
@@ -43,6 +44,7 @@ function renderZones() {
   const dirty=zonesDirty();
   $('zone-panel').hidden=!drawMode && draftZones.length===0;
   $('apply-zones').disabled=zoneBusy || !dirty || !currentJob; $('clear-zones').disabled=zoneBusy || draftZones.length===0;
+  $('zone-roof').disabled=zoneBusy || !activeRoof;
   $('zone-status').textContent=dirty ? 'Changes not applied yet' : '';
 }
 function setDrawMode(on) {
@@ -105,11 +107,12 @@ function setView() {
 function selectRoof(id) {
   $('map-section').open=true;
   activeRoof=id;
+  renderZones();
   $('roof-results').open=true;
   document.querySelectorAll('details.roof-accordion').forEach(detail=>{if(detail.dataset.roof===id)detail.open=true;});
   document.querySelectorAll('[data-roof]').forEach(element=>element.classList.toggle('selected',element.dataset.roof===id));
   const roof=currentResult?.roofs.find(roof=>roof.properties.id===id);
-  if(roof){$('selected-roof').hidden=false;$('selected-address').textContent=roofLabel(roof.properties);$('selected-roof-info').textContent=roofNote(`${format(roof.properties.area_m2)} m²`,`${format(roof.properties.estimated_energy_kwh_year)} kWh/year potential`,addressNote(roof.properties));}
+  if(roof){$('selected-roof').hidden=false;$('selected-address').textContent=roofLabel(roof.properties);$('selected-roof-info').textContent=roofNote(`${format(roof.properties.area_m2)} m²`,`${format(roof.properties.estimated_energy_kwh_year)} kWh/yr theoretical potential`,addressNote(roof.properties));}
 }
 const RESOLVED_ADDRESS=new Set(['reverse_geocoded','nearby_address','synthetic']);
 // Roofs without a looked-up street address are labeled by rank instead of a status message.
@@ -150,7 +153,9 @@ function render(result,job,preserveView=false) {
   for(const [id,file] of [['csv-export','roofs.csv'],['geojson-export','roofs.geojson'],['json-export','results.json']]) $(''+id).href=`/results/${job}/${file}`;
   const width=result.analysis.raster_width,height=result.analysis.raster_height;
   originalView=[0,0,width,height]; if(!preserveView || !view) view=[...originalView]; setView();
-  for(const [id,file] of [['aerial','aerial.png'],['sunlight','sunlight.png']]) {
+  // Older saved runs used PNG previews.
+  const previews=result.preview_files || {aerial:'aerial.png',sunlight:'sunlight.png'};
+  for(const [id,file] of [['aerial',previews.aerial],['sunlight',previews.sunlight]]) {
     const image=$(id); image.setAttribute('href',`/results/${job}/${file}`); image.setAttribute('width',width); image.setAttribute('height',height);
   }
   $('center-marker').setAttribute('transform',`translate(${width/2} ${height/2})`);
@@ -182,7 +187,7 @@ function render(result,job,preserveView=false) {
     const detail=document.createElement('details');detail.className='roof-accordion';detail.dataset.roof=p.id;
     const summary=document.createElement('summary');
     const heading=document.createElement('span');heading.textContent=rankedRoofLabel(p);
-    const badge=document.createElement('span');badge.className='roof-energy-badge';badge.textContent=`${format(p.estimated_energy_kwh_year)} kWh/year potential`;
+    const badge=document.createElement('span');badge.className='roof-energy-badge';badge.textContent=`${format(p.estimated_energy_kwh_year)} kWh/yr theoretical potential`;badge.title='Whole usable roof at a generic panel density, separate from your layout';
     summary.append(heading,badge);detail.append(summary);
     const body=document.createElement('div');body.className='roof-detail-body';
     const info=document.createElement('p');info.className='hint';info.textContent=roofNote(addressNote(p),p.partial_roof?'Partial roof at boundary':'',p.existing_panel_area_m2?`${format(p.existing_panel_area_m2)} m² existing panels avoided`:'');
@@ -217,7 +222,7 @@ function renderProposal(proposal) {
   $('panel-count').textContent=proposal ? format(proposal.panel_count) : '—';
   $('plan-cost').textContent=proposal ? '$'+format(proposal.estimated_cost_usd,2) : '—';
   $('plan-energy').textContent=proposal ? format(proposal.estimated_energy_kwh_year) : '—';
-  $('plan-status').textContent=proposal ? proposal.status+(proposal.energy_shortfall_kwh_year>0 ? ` Shortfall: ${format(proposal.energy_shortfall_kwh_year)} kWh/year.` : '') : 'Set your budget and annual energy target, then click Update recommendations to create a plan from this saved analysis.';
+  $('plan-status').textContent=proposal ? proposal.status+(proposal.energy_shortfall_kwh_year>0 ? ` Shortfall: ${format(proposal.energy_shortfall_kwh_year)} kWh/year.` : '') : 'Set your budget and yearly energy need, then click Update plan on the Search tab.';
   $('plan-status').classList.toggle('target-met',Boolean(proposal?.target_met));
   $('plan-notes').textContent=proposal ? `${proposal.panel_model ? panelName(proposal.panel_model)+' · ' : ''}$${format(proposal.installed_cost_per_watt,2)}/W installed.` : '';
   if(proposal?.installation_estimate){const estimate=proposal.installation_estimate;const range=proposal.estimated_cost_range_usd;$('plan-notes').textContent+=` ${estimate.state || 'Unknown state'} · ${estimate.region} estimate, range $${format(range[0])}–$${format(range[1])}. Screening estimate, not a quote.`;}
@@ -236,7 +241,7 @@ function renderProposal(proposal) {
 }
 function renderPlottedPanelReport(proposal) {
   $('plotted-roofs').replaceChildren();
-  $('placement-explanation').textContent=proposal?.placement_explanation || 'The planner uses roof-average annual yield and geometric fit. Update recommendations to generate detailed reasoning for this saved layout.';
+  $('placement-explanation').textContent=proposal?.placement_explanation || 'Click Update plan on the Search tab to explain this saved layout.';
   if(!proposal){$('plotted-panel-summary').textContent='Generate a panel plan using your budget and annual energy target to see proposed panels and their roof-by-roof breakdown.';return;}
   const groups=new Map();
   for(const panel of proposal.panels){const group=groups.get(panel.roof_id)||{count:0,energy:0};group.count++;group.energy+=panel.estimated_energy_kwh_year;groups.set(panel.roof_id,group);}
@@ -260,7 +265,8 @@ function streetCityState(request){
   return `${parts[start]}, ${parts[start+1]}, ${state}`;
 }
 function fullPanelName(model){return `${model.manufacturer} ${model.model_name}`;}
-const brandName=model=>model.manufacturer.toLowerCase().replace(/\b\w/g,letter=>letter.toUpperCase());
+// "RICH SOLAR" → "Rich Solar"; short acronyms like "REC" stay as written.
+const brandName=model=>model.manufacturer.split(' ').map(word=>word.length>3 && word===word.toUpperCase() ? word[0]+word.slice(1).toLowerCase() : word).join(' ');
 // e.g. "200 W Pro", "100 W Bifacial 12 V": enough to tell catalog models apart.
 function shortModel(model){
   const parts=[`${format(model.rated_power_w)} W`], name=model.model_name;
@@ -283,13 +289,14 @@ function renderRecommendations(data) {
     const model=currentResult?.proposal?.panel_model;
     $('chosen-panel-name').textContent=model ? panelName(model) : 'Your proposed solar layout';
     $('chosen-panel-label').textContent='PANEL PLOTTED ON THE MAP';
-    $('chosen-panel-description').textContent='Click Update recommendations to compare the CSV catalog and choose a panel for this saved search.';
+    $('chosen-panel-description').textContent='Open the Search tab and click Update plan to compare panels for this saved search.';
     if(model)setPanelLink($('chosen-panel-link'),model.specifications_source_url || model.price_source_url);
-    $('recommendation-summary').textContent='Click Update recommendations to compare the CSV catalog using this saved search.';return;
+    $('recommendation-summary').textContent='Open the Search tab and click Update plan to compare panels.';return;
   }
   $('budget-includes-installation').checked=data.budget_includes_installation!==false;renderBudgetScope();
   $('budget').value=data.budget_usd; $('energy-target').value=data.energy_target_kwh_year;
-  $('space-limit').value=data.space_limit_m2 ?? ''; $('panel-priority').value=data.priority;
+  $('space-limit').value=data.space_limit_m2==null ? '' : +(data.space_limit_m2/($('space-unit').value==='ft2' ? SQ_FT : 1)).toFixed(1); $('panel-priority').value=data.priority;
+  $('derate').value=currentResult?.assumptions?.system_derate ?? .85;
   const best=data.recommendations.find(item=>item.recommended) || data.recommendations[0];
   const chosen=data.recommendations.find(item=>item.model.model_id===data.selected_model_id) || best;
   if(chosen){
@@ -390,6 +397,12 @@ $('roof-map').addEventListener('click',event=>{if(drawMode)event.stopPropagation
 $('draw-zone').addEventListener('click',()=>setDrawMode(!drawMode));
 document.addEventListener('keydown',event=>{if(event.key==='Escape' && drawMode){setDrawMode(false);renderZones();}});
 $('clear-zones').addEventListener('click',()=>{draftZones=[];renderZones();});
+$('zone-roof').addEventListener('click',()=>{
+  const roof=currentResult?.roofs.find(item=>item.properties.id===activeRoof); if(!roof)return;
+  const points=(roof.preview_geometry.type==='Polygon' ? [roof.preview_geometry.coordinates] : roof.preview_geometry.coordinates).flat(2);
+  const xs=points.map(point=>point[0]), ys=points.map(point=>point[1]);
+  draftZones.push([Math.min(...xs),Math.min(...ys),Math.max(...xs),Math.max(...ys)]);renderZones();
+});
 $('apply-zones').addEventListener('click',async()=>{
   const zones=draftZones.map(zone=>[...zone]); setDrawMode(false);
   if(await updatePlan(null,{blocked_zones:zones}))
@@ -528,6 +541,12 @@ for(const [index,id] of ['compare-a','compare-b'].entries())$(id).addEventListen
 });
 
 function renderDashboard(result) {
+  const impact=result.impact;
+  $('impact-savings').textContent=impact ? `$${format(impact.annual_bill_savings_usd)}/yr` : '—';
+  $('impact-price').textContent=impact ? `At ${format(impact.electricity_price_cents_per_kwh,1)}¢/kWh (${impact.price_region})` : '';
+  $('impact-payback').textContent=impact?.simple_payback_years ? `${format(impact.simple_payback_years,1)} years` : '—';
+  $('impact-co2').textContent=impact ? format(impact.co2_avoided_tonnes_per_year,1) : '—';
+  $('impact-homes').textContent=impact ? format(impact.homes_powered,1) : '—';
   const plan=result.proposal, model=plan?.panel_model;
   const items=result.panel_recommendations?.recommendations || [];
   const chosen=items.find(item=>item.model.model_id===model?.model_id);
@@ -574,7 +593,7 @@ function renderDashboard(result) {
 function renderCatalogTable(data) {
   const items=data?.recommendations || [];
   const best=items.find(item=>item.recommended) || items[0];
-  $('top-recommendation-reason').textContent=best ? '' : 'Click Update recommendations to compare panels for this saved search.';
+  $('top-recommendation-reason').textContent=best ? '' : 'Open the Search tab and click Update plan to compare panels.';
 }
 const SVG='http://www.w3.org/2000/svg';
 function svgNode(tag,attributes={}){const node=document.createElementNS(SVG,tag);for(const [key,value] of Object.entries(attributes))node.setAttribute(key,value);return node;}
@@ -676,6 +695,12 @@ function renderTopPanels(data) {
 }
 // Results are split into tabs; the address header and summary tiles stay above them.
 const TABS=['map','panels','details','roofs','search'];
+for(const name of TABS){
+  const panels=[...document.querySelectorAll(`[data-tab="${name}"]`)], tab=document.querySelector(`[data-tab-target="${name}"]`);
+  tab.id=`tab-${name}`;
+  panels.forEach((panel,index)=>{panel.id ||= `tabpanel-${name}-${index}`;panel.setAttribute('role','tabpanel');panel.setAttribute('aria-labelledby',tab.id);});
+  tab.setAttribute('aria-controls',panels.map(panel=>panel.id).join(' '));
+}
 function setTab(name){
   if(!TABS.includes(name))return;
   document.querySelector('.workspace').dataset.view=name;

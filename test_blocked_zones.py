@@ -37,7 +37,7 @@ class BlockedZoneTests(unittest.TestCase):
         after = panel_boxes(self.result)
         self.assertTrue(after)
         self.assertFalse(any(panel.intersects(box(*zone)) for panel in after))
-        self.assertEqual(self.result["blocked_zones"][0]["bounds"], zone)
+        self.assertEqual(self.result["blocked_zones"][0]["bounds"], [round(value, 2) for value in zone])
         self.assertGreater(self.result["blocked_zones"][0]["area_m2"], 0)
         self.assertIn("no-panel zone", describe_results(self.result)["report"]["findings"])
 

@@ -18,11 +18,17 @@ from address_autocomplete import address_predictions
 from demo_roofready import run_demo
 from process_solar_layers import run_pipeline
 from solar_address import DEFAULT_API_KEY, InputError, radius_in_meters, search_address
+from panel_plan import load_sunlight
 from panel_recommendations import build_recommendations, validate_recommendation_inputs, load_catalog
 from solar_report import create_pdf_report
 from roof_details import add_roof_addresses, describe_results, save_report
 
 ROOT = Path(__file__).resolve().parent
+
+
+def resolve_key(supplied=""):
+    """A key typed in the dashboard wins; otherwise the environment, then the local .env file."""
+    return (supplied or "").strip() or os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
 
 
 def create_app(output_root=None):
@@ -47,6 +53,16 @@ def create_app(output_root=None):
             except (ValueError, OSError):
                 continue
 
+    sunlight_cache = {}
+
+    def sunlight_for(job_id):
+        # Per-pixel sunlight for sunlight-aware placement; small cache so re-plans stay instant.
+        if job_id not in sunlight_cache:
+            if len(sunlight_cache) >= 3:
+                sunlight_cache.pop(next(iter(sunlight_cache)))
+            sunlight_cache[job_id] = load_sunlight(output_root / job_id)
+        return sunlight_cache[job_id]
+
     @app.before_request
     def check_origin():
         # Local app: prevent unrelated sites from triggering billable requests.
@@ -55,7 +71,7 @@ def create_app(output_root=None):
 
     @app.get("/")
     def index():
-        key = os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
+        key = resolve_key()
         return render_template("index.html", configured=bool(key))
 
     @app.post("/api/address-suggestions")
@@ -75,7 +91,7 @@ def create_app(output_root=None):
             recent = list(dict.fromkeys(address for address in saved if query.casefold() in address.casefold()))[:5]
         fallback = [{"address": address, "label": address, "detail": "Previously analyzed", "source": "recent"}
                     for address in recent]
-        key = supplied.strip() or os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
+        key = resolve_key(supplied)
         if not key:
             return jsonify(suggestions=fallback, notice="Type a full address, or configure your Google key for live suggestions.")
         try:
@@ -99,7 +115,7 @@ def create_app(output_root=None):
                                       panel_kw_per_m2=body["panel_kw_per_m2"], saved_root=output_root,
                                       reuse_imagery=body.get("reuse_imagery") is not False)
             progress("Comparing panel models and building your layout…")
-            build_recommendations(result, **body["plan_inputs"])
+            build_recommendations(result, **body["plan_inputs"], sunlight=load_sunlight(directory))
             result["search_seconds"] = round(time.monotonic() - started, 1)
             result["completed_at"] = time.strftime("%Y-%m-%dT%H:%M")
             save_report(result, directory)
@@ -122,7 +138,7 @@ def create_app(output_root=None):
         body = request.get_json(silent=True)
         if not isinstance(body, dict):
             return jsonify(error="Expected a JSON request."), 400
-        key = os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
+        key = resolve_key()
         try:
             body["plan_inputs"] = validate_recommendation_inputs(body)
             load_catalog()
@@ -196,7 +212,7 @@ def create_app(output_root=None):
                 abort(404)
             result = dict(job["result"])
         try:
-            build_recommendations(result, **inputs, reuse_comparison=True)
+            build_recommendations(result, **inputs, reuse_comparison=True, sunlight=sunlight_for(job_id))
         except InputError as exc:
             return jsonify(error=str(exc)), 400
         save_report(result, output_root / job_id)
@@ -224,7 +240,7 @@ def create_app(output_root=None):
         body = request.get_json(silent=True) or {}
         if not isinstance(body, dict) or not isinstance(body.get("api_key", ""), str):
             return jsonify(error="API key must be text."), 400
-        key = body.get("api_key", "").strip() or os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
+        key = resolve_key(body.get("api_key", ""))
         with lock:
             job = jobs.get(job_id)
             if not job or job["status"] != "complete":
@@ -259,7 +275,7 @@ def create_app(output_root=None):
         with lock:
             if job_id not in jobs or jobs[job_id]["status"] != "complete":
                 abort(404)
-        if filename not in {"aerial.png", "sunlight.png", "roofs.csv", "roofs.geojson", "results.json", "summary.txt",
+        if filename not in {"aerial.png", "sunlight.png", "aerial.jpg", "sunlight.webp", "roofs.csv", "roofs.geojson", "results.json", "summary.txt",
                             "clipped_roof_mask.tif", "clipped_annual_flux.tif", "clipped_dsm.tif"}:
             abort(404)
         return send_from_directory(output_root / job_id, filename,

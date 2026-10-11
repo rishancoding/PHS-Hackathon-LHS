@@ -103,6 +103,11 @@ def describe_results(result):
                          f"(${plan['estimated_other_equipment_installation_cost_usd']:,.0f}) cost extra.")
     elif not ranked:
         findings += "No roof regions with usable sunlight data were available to estimate solar potential."
+    impact = result.get("impact")
+    if plan and impact and impact.get("annual_bill_savings_usd"):
+        payback = f", about a {impact['simple_payback_years']:g}-year simple payback" if impact.get("simple_payback_years") else ""
+        findings += (f" At {impact['price_region']} average electricity prices that is roughly ${impact['annual_bill_savings_usd']:,.0f} a year in bill savings"
+                     f"{payback}, and about {impact['co2_avoided_tonnes_per_year']:,.1f} t of CO2 avoided per year (screening estimates, no incentives).")
     comparison = result.get("panel_recommendations")
     if comparison:
         meeting = sum(item["target_met"] for item in comparison["recommendations"])

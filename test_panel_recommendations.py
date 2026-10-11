@@ -23,14 +23,31 @@ def model(mid, watts=100, price=50, width=1, height=1, warranty=2, kind='rigid')
 class RecommendationTests(unittest.TestCase):
     def test_catalog_ignores_stock_and_keeps_unknown_specs(self):
         models = load_catalog()
-        self.assertEqual(len(models), 20)
+        self.assertEqual(len(models), 24)
         self.assertTrue(all(m['ignore_stock'] == 'true' for m in models))
         rich = next(m for m in models if m['model_id'] == 'richsolar-rs-m200')
         self.assertIsNone(rich['product_warranty_years'])
         result = build_recommendations(fixture(), 5000, 1000)
-        self.assertEqual(len(result['panel_recommendations']['recommendations']), 15)
-        self.assertEqual(len(result['panel_recommendations']['excluded_models']), 5)
+        # 24 models: 14 rigid rooftop modules compared; 5 portable/flexible and 5 under 100 W excluded.
+        self.assertEqual(len(result['panel_recommendations']['recommendations']), 14)
+        self.assertEqual(len(result['panel_recommendations']['excluded_models']), 10)
+        self.assertTrue(any('Under 100 W' in item['reason'] for item in result['panel_recommendations']['excluded_models']))
+        residential = [m for m in models if m['model_id'] in {'qcells-q-tron-blk-m-g2-plus-425', 'rec-alpha-pure-rx-460',
+                                                               'aptos-dna-108-mfn10-440w', 'silfab-sil-430-qd'}]
+        self.assertEqual(len(residential), 4)
+        self.assertTrue(all(m['specifications_source_url'].startswith('https://') and m['price_source_url'].startswith('https://')
+                            for m in residential))
         json.dumps(result, allow_nan=False)
+
+    def test_impact_estimates_use_state_prices_and_stated_factors(self):
+        from impact import estimate_impact
+        impact = estimate_impact({"estimated_energy_kwh_year": 10000, "estimated_cost_usd": 26000}, "CA")
+        self.assertEqual(impact["annual_bill_savings_usd"], 3254.0)
+        self.assertEqual(impact["simple_payback_years"], 8.0)
+        self.assertAlmostEqual(impact["co2_avoided_tonnes_per_year"], 6.23, places=2)
+        self.assertAlmostEqual(impact["homes_powered"], .96, places=2)
+        self.assertEqual(estimate_impact({"estimated_energy_kwh_year": 0}, "ZZ")["price_region"], "US average")
+        self.assertIsNone(estimate_impact({"estimated_energy_kwh_year": 0}, "CA")["simple_payback_years"])
 
     def test_priority_changes_recommendation_and_map_dimensions(self):
         catalog = [model('value'), model('compact', watts=200, price=100, warranty=10)]
