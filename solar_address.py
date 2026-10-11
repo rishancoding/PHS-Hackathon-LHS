@@ -134,8 +134,34 @@ def geocode_address(address, api_key, include_state=False):
     if include_state:
         state = next((c.get("short_name") for c in result.get("address_components", [])
                       if "administrative_area_level_1" in c.get("types", [])), None)
-        return (*answer, state)
+        return (*answer, state, street_address(result))
     return answer
+
+
+def street_address(result):
+    """Re-enterable street address from Geocoding components, without building or place names."""
+    parts = {}
+    for component in result.get("address_components", []):
+        for kind in component.get("types", []):
+            parts.setdefault(kind, component)
+    def name(kind, form="short_name"):
+        return parts.get(kind, {}).get(form, "")
+    street = f"{name('street_number')} {name('route')}".strip()
+    city = name("locality", "long_name") or name("sublocality", "long_name") or name("postal_town", "long_name")
+    region = f"{name('administrative_area_level_1')} {name('postal_code')}".strip()
+    return ", ".join(part for part in (street, city, region, "USA") if part)
+
+
+def search_address(request):
+    """Address to suggest for a new search; older saves drop leading building/place names."""
+    if request.get("search_address"):
+        return request["search_address"]
+    address = request.get("address", "")
+    parts = [part.strip() for part in address.split(",")]
+    for index, part in enumerate(parts):
+        if part[:1].isdigit():
+            return ", ".join(parts[index:])
+    return address
 
 
 def solar_parameters(latitude, longitude, meters):
@@ -156,10 +182,11 @@ def prepare_request(address, radius, unit, api_key):
     if unit not in {"feet", "meters"}:
         raise InputError("Unit must be 'feet' or 'meters'.")
     meters = radius_in_meters(radius, unit)
-    formatted, latitude, longitude, state = geocode_address(address, api_key, include_state=True)
+    formatted, latitude, longitude, state, street = geocode_address(address, api_key, include_state=True)
     params = solar_parameters(latitude, longitude, meters)
     return {
         "address": formatted,
+        "search_address": street,
         "state": state,
         "latitude": latitude,
         "longitude": longitude,

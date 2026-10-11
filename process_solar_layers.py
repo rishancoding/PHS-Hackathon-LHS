@@ -21,8 +21,9 @@ from scipy import ndimage
 from shapely.geometry import Point, mapping, shape
 from shapely import transform as shapely_transform
 
+from existing_panels import DETECTOR as EXISTING_PANEL_DETECTOR, detect_existing_panels
 from solar_address import DEFAULT_API_KEY, InputError, SOLAR_URL, get_json, https_context, prepare_request
-from roof_details import add_roof_addresses, save_report
+from roof_details import save_report
 
 LAYERS = {"rgb": "rgbUrl", "mask": "maskUrl", "annual_flux": "annualFluxUrl", "dsm": "dsmUrl"}
 
@@ -201,6 +202,22 @@ def process_layers(paths, request, directory, usable_fraction=0.65, panel_kw_per
                if feature["properties"]["estimated_energy_kwh_year"] is not None else -1, reverse=True)
     for rank, roof in enumerate(roofs, 1):
         roof["properties"]["rank"] = rank
+    progress("Checking roofs for possible existing panels…")
+    t = grid["transform"]
+    def to_world(x, y, z=None):
+        return t.a * np.asarray(x) + t.b * np.asarray(y) + t.c, t.d * np.asarray(x) + t.e * np.asarray(y) + t.f
+    existing_area = {roof["properties"]["id"]: 0.0 for roof in roofs}
+    existing_panels = []
+    for polygon, label, area in detect_existing_panels(rgb, filtered, grid["resolution"]):
+        roof_id = f"roof-{label}"
+        if roof_id not in existing_area:
+            continue
+        existing_area[roof_id] += area
+        existing_panels.append({"type": "Feature", "properties": {"roof_id": roof_id, "area_m2": round(area, 1)},
+                                "geometry": mapping(transform_geometry(to_wgs84, transform_geometry(to_world, polygon))),
+                                "preview_geometry": mapping(polygon.simplify(1))})
+    for roof in roofs:
+        roof["properties"]["existing_panel_area_m2"] = round(existing_area[roof["properties"]["id"]], 1)
     image = np.clip(np.nan_to_num(np.moveaxis(rgb, 0, -1)), 0, 255).astype(np.uint8)
     alpha = (circle_pixels & np.all(np.isfinite(rgb), axis=0)).astype(np.uint8) * 255
     Image.fromarray(np.dstack([image, alpha])).save(directory / "aerial.png")
@@ -230,15 +247,19 @@ def process_layers(paths, request, directory, usable_fraction=0.65, panel_kw_per
         "summary": {"candidate_roofs": len(roofs),
                     "estimated_energy_kwh_year": round(sum(r["properties"]["estimated_energy_kwh_year"] or 0 for r in roofs), 1)},
         "roofs": roofs,
+        "existing_panels": existing_panels, "existing_panel_detector": EXISTING_PANEL_DETECTOR,
         "notes": [
             "Candidate roof regions are not verified building identities; touching roofs may merge.",
             "Area is horizontal footprint within the radius, not sloped roof surface area.",
             "Energy = sunlight-covered area × usable fraction × panel kW/m² × annual yield (kWh/kW/year).",
             "Missing sunlight is excluded. Roof portions beyond the radius are excluded and flagged.",
             "Screening estimates do not establish structural condition, setbacks, or installation readiness.",
+            "Possible existing panels are flagged by color, not a trained model; verify them on the aerial image.",
         ],
     }
-    add_roof_addresses(result)
+    # Street addresses are a separate step run after the analysis (Look up roof addresses).
+    for roof in roofs:
+        roof["properties"].update(address="Address not looked up", address_status="not_looked_up")
     save_report(result, directory)
     return result
 
@@ -255,7 +276,6 @@ def run_pipeline(address, radius, unit, api_key, directory, progress=lambda mess
     paths = download_layers(data, api_key, Path(directory) / "layers", progress)
     result = process_layers(paths, request, directory, progress=progress, **options)
     result["imagery"] = {key: data.get(key) for key in ("imageryDate", "imageryProcessedDate", "imageryQuality")}
-    add_roof_addresses(result, api_key, progress)
     save_report(result, directory)
     return result
 

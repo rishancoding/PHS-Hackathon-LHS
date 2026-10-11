@@ -85,7 +85,7 @@ def describe_results(result):
         best = max(ranked, key=lambda r: r["properties"]["estimated_energy_kwh_year"])
         props = best["properties"]
         address = props.get("address", "Address unavailable")
-        label = address if address != "Address unavailable" else f"candidate {props['id']} (address unavailable)"
+        label = address if address not in ("Address unavailable", "Address not looked up") else f"candidate {props['id']}"
         if props.get("address_status") == "nearby_address":
             label = f"the roof near {address} (address approximate)"
         findings += f"The highest-ranked region is {label}, with an estimated {props['estimated_energy_kwh_year']:,.0f} kWh/year of screening potential. "
@@ -107,6 +107,15 @@ def describe_results(result):
     if comparison:
         meeting = sum(item["target_met"] for item in comparison["recommendations"])
         findings += f" {meeting} of {len(comparison['recommendations'])} compared rigid panel models meet the target within the current budget and space assumptions."
+    if "existing_panels" in result:
+        existing = result["existing_panels"]
+        if existing:
+            roofs_with = len({feature["properties"]["roof_id"] for feature in existing})
+            area = sum(feature["properties"]["area_m2"] for feature in existing)
+            findings += (f" Possible existing solar panels were flagged on {roofs_with} roof region{'s' if roofs_with != 1 else ''} "
+                         f"({area:,.0f} m²); new panels avoid those areas. This is a color-based check, so verify it on the aerial image.")
+        else:
+            findings += " No existing solar panels were flagged by the color-based check."
     selection = result.get("roof_selection")
     if selection:
         findings += (f" Panel planning uses {len(selection['included_roof_ids'])} included roof regions; "
@@ -137,7 +146,7 @@ def save_report(result, directory):
     features = [{k: v for k, v in roof.items() if k != "preview_geometry"} for roof in result["roofs"]]
     (directory / "roofs.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": features}, allow_nan=False))
     columns = ["rank", "id", "address", "address_status", "area_m2", "area_ft2", "annual_yield_kwh_per_kw",
-               "estimated_capacity_kw", "estimated_energy_kwh_year", "flux_coverage_percent", "partial_roof",
+               "estimated_capacity_kw", "estimated_energy_kwh_year", "flux_coverage_percent", "partial_roof", "existing_panel_area_m2",
                "latitude", "longitude", "mean_elevation_m"]
     with (directory / "roofs.csv").open("w", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=columns)

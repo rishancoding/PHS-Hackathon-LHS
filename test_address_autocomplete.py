@@ -109,6 +109,23 @@ class AddressRouteTests(unittest.TestCase):
         self.assertEqual(data['suggestions'][0]['address'], '123 Main St, Boston, MA 02110, USA')
         predict.assert_not_called()
 
+    @patch.dict(os.environ, {'GOOGLE_MAPS_API_KEY': ''})
+    @patch('roofready_app.DEFAULT_API_KEY', '')
+    def test_saved_suggestions_and_history_drop_building_names(self):
+        saved = Path(self.folder.name)/'campus'; saved.mkdir()
+        result = {'request': {'address': 'Google Building 41, 1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA',
+                              'radius_meters': 100},
+                  'analysis': {'flux_coverage_percent': 100}, 'summary': {}, 'roofs': []}
+        (saved/'results.json').write_text(json.dumps(result))
+        app = create_app(self.folder.name); client = app.test_client()
+        try:
+            data = client.post('/api/address-suggestions', headers=self.origin, json={'query': 'Amphitheatre'}).get_json()
+            self.assertEqual(data['suggestions'][0]['address'], '1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA')
+            history = {run['job_id']: run['address'] for run in client.get('/api/history').get_json()}
+            self.assertEqual(history['campus'], '1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA')
+        finally:
+            app.extensions['roofready_executor'].shutdown(wait=True)
+
 
 if __name__ == '__main__':
     unittest.main()

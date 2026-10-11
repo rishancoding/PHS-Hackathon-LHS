@@ -3,7 +3,8 @@
 import unittest
 from unittest.mock import patch
 
-from solar_address import InputError, prepare_request, radius_in_meters, solar_parameters, validate_geocode
+from solar_address import (InputError, prepare_request, radius_in_meters, search_address, solar_parameters,
+                           street_address, validate_geocode)
 
 
 def geocode(country="US", state="CA", **extra):
@@ -68,6 +69,23 @@ class SolarAddressTests(unittest.TestCase):
         self.assertAlmostEqual(output["diameter_feet"], 600)
         self.assertIn("radiusMeters=", output["solar_request_url"])
         self.assertNotIn("secret-key", str(output))
+        self.assertEqual(output["search_address"], "123 Example St, CA, USA")
+
+    def test_search_address_drops_building_names(self):
+        self.assertEqual(street_address({"address_components": [
+            {"short_name": "1600", "long_name": "1600", "types": ["street_number"]},
+            {"short_name": "Amphitheatre Pkwy", "long_name": "Amphitheatre Parkway", "types": ["route"]},
+            {"short_name": "Google Building 41", "long_name": "Google Building 41", "types": ["premise"]},
+            {"short_name": "Mountain View", "long_name": "Mountain View", "types": ["locality", "political"]},
+            {"short_name": "CA", "long_name": "California", "types": ["administrative_area_level_1", "political"]},
+            {"short_name": "US", "long_name": "United States", "types": ["country", "political"]},
+            {"short_name": "94043", "long_name": "94043", "types": ["postal_code"]}]}),
+            "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA")
+        old = "Google Building 41, 1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA"
+        self.assertEqual(search_address({"address": old}), "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA")
+        self.assertEqual(search_address({"address": "123 Main St, Boston, MA 02110, USA"}), "123 Main St, Boston, MA 02110, USA")
+        self.assertEqual(search_address({"address": old, "search_address": "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA"}),
+                         "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA")
 
     @patch("solar_address.get_json")
     def test_invalid_input_does_not_call_google(self, request):
