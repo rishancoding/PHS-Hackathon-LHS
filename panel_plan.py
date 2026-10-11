@@ -24,6 +24,7 @@ def load_sunlight(directory):
     if not path.is_file():
         return None
     import rasterio
+
     with rasterio.open(path) as source:
         flux = source.read(1).astype(np.float64)
     valid = np.isfinite(flux) & (flux >= 0)
@@ -56,8 +57,11 @@ def roof_angle(polygon):
 
 def validate_plan_inputs(budget_usd=25000, energy_target_kwh_year=10000, installed_cost_per_watt=3):
     values = {}
-    for field, value in (("budget_usd", budget_usd), ("energy_target_kwh_year", energy_target_kwh_year),
-                         ("installed_cost_per_watt", installed_cost_per_watt)):
+    for field, value in (
+        ("budget_usd", budget_usd),
+        ("energy_target_kwh_year", energy_target_kwh_year),
+        ("installed_cost_per_watt", installed_cost_per_watt),
+    ):
         try:
             value = float(value)
         except (ValueError, TypeError):
@@ -68,9 +72,17 @@ def validate_plan_inputs(budget_usd=25000, energy_target_kwh_year=10000, install
     return values
 
 
-def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, installed_cost_per_watt=None,
-                   panel_model=None, space_limit_m2=None, _geometry_cache=None, budget_includes_installation=True,
-                   sunlight=None):
+def propose_panels(
+    result,
+    budget_usd=25000,
+    energy_target_kwh_year=10000,
+    installed_cost_per_watt=None,
+    panel_model=None,
+    space_limit_m2=None,
+    _geometry_cache=None,
+    budget_includes_installation=True,
+    sunlight=None,
+):
     cost_estimate = estimate_installation_cost(result) if installed_cost_per_watt is None else None
     if cost_estimate:
         installed_cost_per_watt = cost_estimate["installed_cost_per_watt"]
@@ -108,7 +120,8 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
     blocked = {}
     for feature in result.get("existing_panels", []):
         blocked.setdefault(feature["properties"]["roof_id"], []).append(
-            shape(feature["preview_geometry"]).buffer(.2 / resolution, join_style="mitre"))
+            shape(feature["preview_geometry"]).buffer(0.2 / resolution, join_style="mitre")
+        )
     zones = [box(*zone["bounds"]) for zone in result.get("blocked_zones", [])]
 
     def usable_geometry(roof):
@@ -122,9 +135,18 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
             geometry_cache[key] = (polygon, polygon.area / original.area if original.area else 0)
         return geometry_cache[key]
 
-    available_area = sum(max(0, r["properties"]["area_m2"] * usable_geometry(r)[1] * assumptions["usable_roof_fraction"]
-                             * r["properties"]["flux_coverage_percent"] / 100)
-                         for r in result["roofs"] if r["properties"].get("annual_yield_kwh_per_kw") and r.get("preview_geometry"))
+    available_area = sum(
+        max(
+            0,
+            r["properties"]["area_m2"]
+            * usable_geometry(r)[1]
+            * assumptions["usable_roof_fraction"]
+            * r["properties"]["flux_coverage_percent"]
+            / 100,
+        )
+        for r in result["roofs"]
+        if r["properties"].get("annual_yield_kwh_per_kw") and r.get("preview_geometry")
+    )
     roofs = sorted(result["roofs"], key=lambda r: r["properties"].get("annual_yield_kwh_per_kw") or 0, reverse=True)
     counts = {}
     for roof in roofs:
@@ -133,8 +155,14 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
         if not yield_value or not roof.get("preview_geometry"):
             continue
         polygon, kept = usable_geometry(roof)
-        roof_limit = math.floor(properties["area_m2"] * kept * assumptions["usable_roof_fraction"]
-                                * properties["flux_coverage_percent"] / 100 / panel_area)
+        roof_limit = math.floor(
+            properties["area_m2"]
+            * kept
+            * assumptions["usable_roof_fraction"]
+            * properties["flux_coverage_percent"]
+            / 100
+            / panel_area
+        )
         remaining = limit - len(panels)
         if remaining <= 0:
             break
@@ -164,17 +192,28 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
         if sunlight:
             # Sunniest band first (100 kWh/kW steps), grid order inside a band, so arrays stay contiguous
             # instead of scattering onto small bright spots.
-            placed = [item for _, item in sorted(enumerate(placed), key=lambda pair: (-math.floor(pair[1][0] / SUNLIGHT_BAND), pair[0]))]
+            placed = [
+                item
+                for _, item in sorted(
+                    enumerate(placed), key=lambda pair: (-math.floor(pair[1][0] / SUNLIGHT_BAND), pair[0])
+                )
+            ]
         count = 0
         for local_yield, box_in_frame, panel in placed:
             if count >= min(roof_limit, remaining) or energy >= inputs["energy_target_kwh_year"]:
                 break
             panel_energy = panel_kw * local_yield * derate
             left, top, right, bottom = box_in_frame.bounds
-            panels.append({"roof_id": properties["id"], "preview_geometry": mapping(panel),
-                           "width_m": (right - left) * resolution, "height_m": (bottom - top) * resolution,
-                           "model_id": panel_model["model_id"] if panel_model else None,
-                           "estimated_energy_kwh_year": round(panel_energy, 2)})
+            panels.append(
+                {
+                    "roof_id": properties["id"],
+                    "preview_geometry": mapping(panel),
+                    "width_m": (right - left) * resolution,
+                    "height_m": (bottom - top) * resolution,
+                    "model_id": panel_model["model_id"] if panel_model else None,
+                    "estimated_energy_kwh_year": round(panel_energy, 2),
+                }
+            )
             energy += panel_energy
             count += 1
         counts[properties["id"]] = count
@@ -188,8 +227,11 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
     elif space_limit_m2 is not None and limit < budget_count and len(panels) >= limit:
         status = "Usable space limit reached; estimated annual energy target remains unmet."
     elif budget_count == 0:
-        status = ("Budget is below the estimated installed cost of one panel." if budget_includes_installation
-                  else "Budget is below the panel hardware cost of one panel.")
+        status = (
+            "Budget is below the estimated installed cost of one panel."
+            if budget_includes_installation
+            else "Budget is below the panel hardware cost of one panel."
+        )
     elif len(panels) >= 5000 and budget_count > 5000:
         status = "Reached the 5,000-panel planning limit; energy target remains unmet."
     elif len(panels) >= budget_count:
@@ -197,16 +239,32 @@ def propose_panels(result, budget_usd=25000, energy_target_kwh_year=10000, insta
     else:
         status = "Available candidate roof space is insufficient for the energy target."
     return {
-        **inputs, "installation_estimate": cost_estimate,
+        **inputs,
+        "installation_estimate": cost_estimate,
         "budget_includes_installation": budget_includes_installation,
         "budget_cost_usd": round(len(panels) * budget_panel_cost, 2),
-        "estimated_cost_range_usd": [round(len(panels)*panel_cost*.75,2), round(len(panels)*panel_cost*1.25,2)] if cost_estimate else None,
-        "panel_count": len(panels), "estimated_cost_usd": round(len(panels) * panel_cost, 2),
-        "estimated_energy_kwh_year": round(energy, 2), "energy_shortfall_kwh_year": round(max(0, inputs["energy_target_kwh_year"] - energy), 2),
-        "target_met": target_met, "status": status, "panel_kw": panel_kw,
-        "panel_width_m": panel_width, "panel_height_m": panel_height,
-        "panel_model": panel_model, "space_limit_m2": space_limit_m2, "available_roof_area_m2": round(available_area, 2),
-        "panel_area_used_m2": round(len(panels) * panel_area, 3), "layout_search_limited": search_limited, "counts_by_roof": counts, "panels": panels,
+        "estimated_cost_range_usd": [
+            round(len(panels) * panel_cost * 0.75, 2),
+            round(len(panels) * panel_cost * 1.25, 2),
+        ]
+        if cost_estimate
+        else None,
+        "panel_count": len(panels),
+        "estimated_cost_usd": round(len(panels) * panel_cost, 2),
+        "estimated_energy_kwh_year": round(energy, 2),
+        "energy_shortfall_kwh_year": round(max(0, inputs["energy_target_kwh_year"] - energy), 2),
+        "target_met": target_met,
+        "status": status,
+        "panel_kw": panel_kw,
+        "panel_width_m": panel_width,
+        "panel_height_m": panel_height,
+        "panel_model": panel_model,
+        "space_limit_m2": space_limit_m2,
+        "available_roof_area_m2": round(available_area, 2),
+        "panel_area_used_m2": round(len(panels) * panel_area, 3),
+        "layout_search_limited": search_limited,
+        "counts_by_roof": counts,
+        "panels": panels,
         "notes": "Concept layout using roof-average yield and an estimated installed price. New panels avoid areas flagged as possible existing panels (a color-based check) and any no-panel zones you drew. Other obstructions, roof ownership, slope, and required setbacks are not detected or excluded. This is not an installation design or quote.",
     }
 
@@ -217,7 +275,7 @@ def fit_grid(polygon, width_m, height_m, resolution, candidate_limit):
         return [], False
     min_x, min_y, max_x, max_y = polygon.bounds
     width, height = width_m / resolution, height_m / resolution
-    step_x, step_y = (width_m + .2) / resolution, (height_m + .2) / resolution
+    step_x, step_y = (width_m + 0.2) / resolution, (height_m + 0.2) / resolution
     rows = max(0, math.floor((max_y - min_y - height) / step_y) + 1)
     cols = max(0, math.floor((max_x - min_x - width) / step_x) + 1)
     layout = []
@@ -229,7 +287,7 @@ def fit_grid(polygon, width_m, height_m, resolution, candidate_limit):
         x, y = min_x + col * step_x, min_y + row * step_y
         rectangles = vector_boxes(x, y, x + width, y + height)
         fitting = rectangles[covers(polygon, rectangles)]
-        layout.extend(fitting[:candidate_limit - len(layout)].tolist())
+        layout.extend(fitting[: candidate_limit - len(layout)].tolist())
         if len(layout) >= candidate_limit:
             break
     return layout, rows * cols > 50000 and len(layout) < candidate_limit

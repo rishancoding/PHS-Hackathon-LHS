@@ -3,6 +3,7 @@
 Not a trained model: blue-tinted, mid-brightness, panel-shaped areas inside Google's
 rooftop mask are flagged so new layouts avoid them. Tuned on 0.1 m Google Solar imagery.
 """
+
 import math
 
 import numpy as np
@@ -11,14 +12,14 @@ from scipy import ndimage
 from shapely.geometry import shape
 
 DETECTOR = "Color screening: blue-tinted, panel-shaped areas on roofs (not a trained model)"
-MIN_BLUE_MINUS_RED = 20      # panels read slate blue; plain roofs and asphalt are nearer gray
+MIN_BLUE_MINUS_RED = 20  # panels read slate blue; plain roofs and asphalt are nearer gray
 MIN_BLUE_MINUS_GREEN = 13
-MIN_BRIGHTNESS = 95          # darker blue areas are mostly shadows
-MAX_BRIGHTNESS = 210         # lighter canopy panels read up to ~180
-MIN_AREA_M2 = 4              # roughly two modules
+MIN_BRIGHTNESS = 95  # darker blue areas are mostly shadows
+MAX_BRIGHTNESS = 210  # lighter canopy panels read up to ~180
+MIN_AREA_M2 = 4  # roughly two modules
 MIN_WIDTH_M = 1.8
-MIN_RECTANGULAR_FILL = 0.5   # area / minimum rotated rectangle
-MIN_TEXTURE = 12             # module grid lines; shadows and plain surfaces are smooth
+MIN_RECTANGULAR_FILL = 0.5  # area / minimum rotated rectangle
+MIN_TEXTURE = 12  # module grid lines; shadows and plain surfaces are smooth
 TEXTURE_MAX_RESOLUTION_M = 0.15
 
 
@@ -30,11 +31,13 @@ def detect_existing_panels(rgb, roof_labels, resolution):
     brightness = (red + green + blue) / 3
     window = max(3, round(1.0 / resolution))
     # Judge ~1 m neighborhoods, not single pixels, so module frames don't break up arrays.
-    candidate = ((roof_labels > 0)
-                 & (ndimage.uniform_filter(blue - red, window) >= MIN_BLUE_MINUS_RED)
-                 & (ndimage.uniform_filter(blue - green, window) >= MIN_BLUE_MINUS_GREEN)
-                 & (ndimage.uniform_filter(brightness, window) >= MIN_BRIGHTNESS)
-                 & (ndimage.uniform_filter(brightness, window) <= MAX_BRIGHTNESS))
+    candidate = (
+        (roof_labels > 0)
+        & (ndimage.uniform_filter(blue - red, window) >= MIN_BLUE_MINUS_RED)
+        & (ndimage.uniform_filter(blue - green, window) >= MIN_BLUE_MINUS_GREEN)
+        & (ndimage.uniform_filter(brightness, window) >= MIN_BRIGHTNESS)
+        & (ndimage.uniform_filter(brightness, window) <= MAX_BRIGHTNESS)
+    )
     candidate = ndimage.binary_opening(candidate, np.ones((window, window)))
     candidate = ndimage.binary_closing(candidate, np.ones((max(3, window // 2),) * 2))
     if not candidate.any():
@@ -45,7 +48,7 @@ def detect_existing_panels(rgb, roof_labels, resolution):
     found = []
     for geometry, value in shapes(labels.astype(np.int32), mask=candidate):
         polygon = shape(geometry)
-        area_m2 = polygon.area * resolution ** 2
+        area_m2 = polygon.area * resolution**2
         if area_m2 < MIN_AREA_M2:
             continue
         rectangle = polygon.minimum_rotated_rectangle
@@ -62,5 +65,5 @@ def detect_existing_panels(rgb, roof_labels, resolution):
         # Neighborhood smoothing trims about half a window from each edge; restore it so
         # new layouts don't clip the real array's border.
         polygon = polygon.buffer(window / 2, join_style="mitre")
-        found.append((polygon, roof_label, polygon.area * resolution ** 2))
+        found.append((polygon, roof_label, polygon.area * resolution**2))
     return found

@@ -3,8 +3,15 @@
 import unittest
 from unittest.mock import patch
 
-from solar_address import (InputError, prepare_request, radius_in_meters, search_address, solar_parameters,
-                           street_address, validate_geocode)
+from solar_address import (
+    InputError,
+    prepare_request,
+    radius_in_meters,
+    search_address,
+    solar_parameters,
+    street_address,
+    validate_geocode,
+)
 
 
 def geocode(country="US", state="CA", **extra):
@@ -50,10 +57,17 @@ class SolarAddressTests(unittest.TestCase):
             validate_geocode(result)
 
     def test_solar_boundaries(self):
-        for radius, size, full in ((100, .1, True), (100.001, .25, True), (175, .25, True),
-                                   (175.001, .25, False), (250, .25, False),
-                                   (250.001, .5, False), (500, .5, False),
-                                   (500.001, 1, False), (1000, 1, False)):
+        for radius, size, full in (
+            (100, 0.1, True),
+            (100.001, 0.25, True),
+            (175, 0.25, True),
+            (175.001, 0.25, False),
+            (250, 0.25, False),
+            (250.001, 0.5, False),
+            (500, 0.5, False),
+            (500.001, 1, False),
+            (1000, 1, False),
+        ):
             with self.subTest(radius=radius):
                 params = solar_parameters(37.42, -122.08, radius)
                 self.assertEqual(params["pixelSizeMeters"], size)
@@ -72,20 +86,39 @@ class SolarAddressTests(unittest.TestCase):
         self.assertEqual(output["search_address"], "123 Example St, CA, USA")
 
     def test_search_address_drops_building_names(self):
-        self.assertEqual(street_address({"address_components": [
-            {"short_name": "1600", "long_name": "1600", "types": ["street_number"]},
-            {"short_name": "Amphitheatre Pkwy", "long_name": "Amphitheatre Parkway", "types": ["route"]},
-            {"short_name": "Google Building 41", "long_name": "Google Building 41", "types": ["premise"]},
-            {"short_name": "Mountain View", "long_name": "Mountain View", "types": ["locality", "political"]},
-            {"short_name": "CA", "long_name": "California", "types": ["administrative_area_level_1", "political"]},
-            {"short_name": "US", "long_name": "United States", "types": ["country", "political"]},
-            {"short_name": "94043", "long_name": "94043", "types": ["postal_code"]}]}),
-            "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA")
+        self.assertEqual(
+            street_address(
+                {
+                    "address_components": [
+                        {"short_name": "1600", "long_name": "1600", "types": ["street_number"]},
+                        {"short_name": "Amphitheatre Pkwy", "long_name": "Amphitheatre Parkway", "types": ["route"]},
+                        {"short_name": "Google Building 41", "long_name": "Google Building 41", "types": ["premise"]},
+                        {
+                            "short_name": "Mountain View",
+                            "long_name": "Mountain View",
+                            "types": ["locality", "political"],
+                        },
+                        {
+                            "short_name": "CA",
+                            "long_name": "California",
+                            "types": ["administrative_area_level_1", "political"],
+                        },
+                        {"short_name": "US", "long_name": "United States", "types": ["country", "political"]},
+                        {"short_name": "94043", "long_name": "94043", "types": ["postal_code"]},
+                    ]
+                }
+            ),
+            "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA",
+        )
         old = "Google Building 41, 1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA"
         self.assertEqual(search_address({"address": old}), "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA")
-        self.assertEqual(search_address({"address": "123 Main St, Boston, MA 02110, USA"}), "123 Main St, Boston, MA 02110, USA")
-        self.assertEqual(search_address({"address": old, "search_address": "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA"}),
-                         "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA")
+        self.assertEqual(
+            search_address({"address": "123 Main St, Boston, MA 02110, USA"}), "123 Main St, Boston, MA 02110, USA"
+        )
+        self.assertEqual(
+            search_address({"address": old, "search_address": "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA"}),
+            "1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA",
+        )
 
     @patch("solar_address.get_json")
     def test_invalid_input_does_not_call_google(self, request):
@@ -95,8 +128,11 @@ class SolarAddressTests(unittest.TestCase):
 
     @patch("solar_address.get_json")
     def test_ambiguous_missing_and_denied(self, request):
-        for response in ({"status": "OK", "results": [geocode(), geocode()]},
-                         {"status": "ZERO_RESULTS"}, {"status": "REQUEST_DENIED"}):
+        for response in (
+            {"status": "OK", "results": [geocode(), geocode()]},
+            {"status": "ZERO_RESULTS"},
+            {"status": "REQUEST_DENIED"},
+        ):
             with self.subTest(response=response), self.assertRaises(InputError):
                 request.return_value = response
                 prepare_request("example", 100, "meters", "key")

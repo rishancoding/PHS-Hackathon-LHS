@@ -1,4 +1,5 @@
 """Protocol, error and dashboard tests for address suggestions without billable requests."""
+
 from io import BytesIO
 import json
 import os
@@ -16,9 +17,12 @@ from solar_address import InputError
 class PredictionTests(unittest.TestCase):
     @patch('address_autocomplete.urlopen')
     def test_predictions_use_server_key_country_bounds_and_narrow_fields(self, open_url):
-        prediction = {'placePrediction': {'text': {'text': '123 Main St, Boston, MA, USA'},
-                      'structuredFormat': {'mainText': {'text': '123 Main St'},
-                                           'secondaryText': {'text': 'Boston, MA, USA'}}}}
+        prediction = {
+            'placePrediction': {
+                'text': {'text': '123 Main St, Boston, MA, USA'},
+                'structuredFormat': {'mainText': {'text': '123 Main St'}, 'secondaryText': {'text': 'Boston, MA, USA'}},
+            }
+        }
         open_url.return_value.__enter__.return_value = BytesIO(json.dumps({'suggestions': [prediction]}).encode())
         items = address_predictions('123 Main', 'test-key')
         self.assertEqual(items[0]['address'], '123 Main St, Boston, MA, USA')
@@ -33,7 +37,7 @@ class PredictionTests(unittest.TestCase):
 
     @patch('address_autocomplete.urlopen')
     def test_invalid_queries_never_call_google(self, open_url):
-        for query in (None, '', '12', 'x'*201):
+        for query in (None, '', '12', 'x' * 201):
             with self.subTest(query=query), self.assertRaises(InputError):
                 address_predictions(query, 'test-key')
         open_url.assert_not_called()
@@ -53,7 +57,9 @@ class PredictionTests(unittest.TestCase):
 
     @patch('address_autocomplete.urlopen')
     def test_empty_or_malformed_predictions_are_handled(self, open_url):
-        open_url.return_value.__enter__.return_value = BytesIO(json.dumps({'suggestions': [None, {}, {'placePrediction': 3}]}).encode())
+        open_url.return_value.__enter__.return_value = BytesIO(
+            json.dumps({'suggestions': [None, {}, {'placePrediction': 3}]}).encode()
+        )
         self.assertEqual(address_predictions('123 Main', 'test-key'), [])
         open_url.return_value.__enter__.return_value = BytesIO(b'not-json')
         with self.assertRaises(InputError):
@@ -63,11 +69,17 @@ class PredictionTests(unittest.TestCase):
 class AddressRouteTests(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.TemporaryDirectory()
-        saved = Path(self.folder.name)/'saved'; saved.mkdir()
-        result = {'request': {'address': '123 Main St, Boston, MA 02110, USA', 'radius_meters': 100},
-                  'analysis': {'flux_coverage_percent': 100}, 'summary': {}, 'roofs': []}
-        (saved/'results.json').write_text(json.dumps(result))
-        self.app = create_app(self.folder.name); self.client = self.app.test_client()
+        saved = Path(self.folder.name) / 'saved'
+        saved.mkdir()
+        result = {
+            'request': {'address': '123 Main St, Boston, MA 02110, USA', 'radius_meters': 100},
+            'analysis': {'flux_coverage_percent': 100},
+            'summary': {},
+            'roofs': [],
+        }
+        (saved / 'results.json').write_text(json.dumps(result))
+        self.app = create_app(self.folder.name)
+        self.client = self.app.test_client()
         self.origin = {'Origin': 'http://localhost'}
 
     def tearDown(self):
@@ -77,25 +89,42 @@ class AddressRouteTests(unittest.TestCase):
     @patch('roofready_app.address_predictions')
     def test_origin_validation_success_and_static_assets(self, predict):
         self.assertEqual(self.client.post('/api/address-suggestions', json={'query': 'Main'}).status_code, 403)
-        for body in ([], {'query': 'a'}, {'query': 'x'*201}, {'query': 'Main', 'api_key': []}):
-            self.assertEqual(self.client.post('/api/address-suggestions', headers=self.origin, json=body).status_code, 400)
+        for body in ([], {'query': 'a'}, {'query': 'x' * 201}, {'query': 'Main', 'api_key': []}):
+            self.assertEqual(
+                self.client.post('/api/address-suggestions', headers=self.origin, json=body).status_code, 400
+            )
         predict.assert_not_called()
-        predict.return_value = [{'address': '123 Main St, Boston, MA, USA', 'label': '123 Main St', 'detail': 'Boston, MA', 'source': 'google'}]
-        response = self.client.post('/api/address-suggestions', headers=self.origin, json={'query': 'Main', 'api_key': 'test-key'})
+        predict.return_value = [
+            {
+                'address': '123 Main St, Boston, MA, USA',
+                'label': '123 Main St',
+                'detail': 'Boston, MA',
+                'source': 'google',
+            }
+        ]
+        response = self.client.post(
+            '/api/address-suggestions', headers=self.origin, json={'query': 'Main', 'api_key': 'test-key'}
+        )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()['suggestions'][0]['source'], 'google')
         predict.assert_called_once_with('Main', 'test-key')
         self.assertNotIn('test-key', response.get_data(as_text=True))
         for asset in ('roofready-mark.svg', 'address.js', 'loading.js'):
-            response = self.client.get('/static/'+asset)
-            self.assertEqual(response.status_code, 200); response.close()
+            response = self.client.get('/static/' + asset)
+            self.assertEqual(response.status_code, 200)
+            response.close()
         page = self.client.get('/').get_data(as_text=True)
         self.assertIn('role="combobox"', page)
         self.assertIn('id="loading-screen"', page)
 
-    @patch('roofready_app.address_predictions', side_effect=InputError('Live suggestions unavailable; type a full address.'))
+    @patch(
+        'roofready_app.address_predictions',
+        side_effect=InputError('Live suggestions unavailable; type a full address.'),
+    )
     def test_service_failure_keeps_recent_address_fallback(self, predict):
-        response = self.client.post('/api/address-suggestions', headers=self.origin, json={'query': 'Main', 'api_key': 'test-key'})
+        response = self.client.post(
+            '/api/address-suggestions', headers=self.origin, json={'query': 'Main', 'api_key': 'test-key'}
+        )
         data = response.get_json()
         self.assertEqual(data['suggestions'][0]['source'], 'recent')
         self.assertIn('full address', data['notice'])
@@ -112,14 +141,24 @@ class AddressRouteTests(unittest.TestCase):
     @patch.dict(os.environ, {'GOOGLE_MAPS_API_KEY': ''})
     @patch('roofready_app.DEFAULT_API_KEY', '')
     def test_saved_suggestions_and_history_drop_building_names(self):
-        saved = Path(self.folder.name)/'campus'; saved.mkdir()
-        result = {'request': {'address': 'Google Building 41, 1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA',
-                              'radius_meters': 100},
-                  'analysis': {'flux_coverage_percent': 100}, 'summary': {}, 'roofs': []}
-        (saved/'results.json').write_text(json.dumps(result))
-        app = create_app(self.folder.name); client = app.test_client()
+        saved = Path(self.folder.name) / 'campus'
+        saved.mkdir()
+        result = {
+            'request': {
+                'address': 'Google Building 41, 1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA',
+                'radius_meters': 100,
+            },
+            'analysis': {'flux_coverage_percent': 100},
+            'summary': {},
+            'roofs': [],
+        }
+        (saved / 'results.json').write_text(json.dumps(result))
+        app = create_app(self.folder.name)
+        client = app.test_client()
         try:
-            data = client.post('/api/address-suggestions', headers=self.origin, json={'query': 'Amphitheatre'}).get_json()
+            data = client.post(
+                '/api/address-suggestions', headers=self.origin, json={'query': 'Amphitheatre'}
+            ).get_json()
             self.assertEqual(data['suggestions'][0]['address'], '1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA')
             history = {run['job_id']: run['address'] for run in client.get('/api/history').get_json()}
             self.assertEqual(history['campus'], '1600 Amphitheatre Pkwy, Mountain View, CA 94043, USA')

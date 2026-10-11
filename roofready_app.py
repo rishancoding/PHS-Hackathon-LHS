@@ -41,14 +41,19 @@ def create_app(output_root=None):
     # Previously completed CLI/dashboard runs can be opened without another API call.
     if output_root.exists():
         # Oldest first, so the saved-search list (newest first) reflects real run order.
-        saved = sorted((folder for folder in output_root.iterdir() if (folder / "results.json").is_file()),
-                       key=lambda folder: (folder / "results.json").stat().st_mtime)
+        saved = sorted(
+            (folder for folder in output_root.iterdir() if (folder / "results.json").is_file()),
+            key=lambda folder: (folder / "results.json").stat().st_mtime,
+        )
         for folder in saved:
             try:
                 result = json.loads((folder / "results.json").read_text())
                 if "roofs" in result and "summary" in result and "request" in result:
                     describe_results(result)
-                    result.setdefault("completed_at", time.strftime("%Y-%m-%dT%H:%M", time.localtime((folder / "results.json").stat().st_mtime)))
+                    result.setdefault(
+                        "completed_at",
+                        time.strftime("%Y-%m-%dT%H:%M", time.localtime((folder / "results.json").stat().st_mtime)),
+                    )
                     jobs[folder.name] = {"status": "complete", "message": "Saved analysis loaded", "result": result}
             except (ValueError, OSError):
                 continue
@@ -86,17 +91,27 @@ def create_app(output_root=None):
         if not isinstance(supplied, str):
             return jsonify(error="API key must be text."), 400
         with lock:
-            saved = (search_address(job["result"]["request"]) for job in reversed(list(jobs.values()))
-                     if job["status"] == "complete" and not job["result"].get("demo"))
+            saved = (
+                search_address(job["result"]["request"])
+                for job in reversed(list(jobs.values()))
+                if job["status"] == "complete" and not job["result"].get("demo")
+            )
             recent = list(dict.fromkeys(address for address in saved if query.casefold() in address.casefold()))[:5]
-        fallback = [{"address": address, "label": address, "detail": "Previously analyzed", "source": "recent"}
-                    for address in recent]
+        fallback = [
+            {"address": address, "label": address, "detail": "Previously analyzed", "source": "recent"}
+            for address in recent
+        ]
         key = resolve_key(supplied)
         if not key:
-            return jsonify(suggestions=fallback, notice="Type a full address, or configure your Google key for live suggestions.")
+            return jsonify(
+                suggestions=fallback, notice="Type a full address, or configure your Google key for live suggestions."
+            )
         try:
             suggestions = address_predictions(query, key)
-            return jsonify(suggestions=suggestions or fallback, notice="" if suggestions or fallback else "No matches. Try adding your city or ZIP code.")
+            return jsonify(
+                suggestions=suggestions or fallback,
+                notice="" if suggestions or fallback else "No matches. Try adding your city or ZIP code.",
+            )
         except InputError as exc:
             return jsonify(suggestions=fallback, notice=str(exc))
 
@@ -104,16 +119,25 @@ def create_app(output_root=None):
         def progress(message):
             with lock:
                 jobs[job_id]["message"] = message
+
         started = time.monotonic()
         try:
             directory = output_root / job_id
             if body.get("demo") is True:
                 result = run_demo(directory, progress)
             else:
-                result = run_pipeline(body["address"], body["radius"], body["unit"], key,
-                                      directory, progress=progress, usable_fraction=body["usable_fraction"],
-                                      panel_kw_per_m2=body["panel_kw_per_m2"], saved_root=output_root,
-                                      reuse_imagery=body.get("reuse_imagery") is not False)
+                result = run_pipeline(
+                    body["address"],
+                    body["radius"],
+                    body["unit"],
+                    key,
+                    directory,
+                    progress=progress,
+                    usable_fraction=body["usable_fraction"],
+                    panel_kw_per_m2=body["panel_kw_per_m2"],
+                    saved_root=output_root,
+                    reuse_imagery=body.get("reuse_imagery") is not False,
+                )
             progress("Comparing panel models and building your layout…")
             build_recommendations(result, **body["plan_inputs"], sunlight=load_sunlight(directory))
             result["search_seconds"] = round(time.monotonic() - started, 1)
@@ -126,7 +150,9 @@ def create_app(output_root=None):
             if not isinstance(exc, InputError):
                 # Full traceback in the terminal for debugging; the key never reaches the log.
                 details = traceback.format_exc()
-                app.logger.error("Analysis %s failed:\n%s", job_id, details.replace(key, "[redacted]") if key else details)
+                app.logger.error(
+                    "Analysis %s failed:\n%s", job_id, details.replace(key, "[redacted]") if key else details
+                )
             # Unexpected errors can include local paths or download URLs; show a stable message.
             if not isinstance(exc, InputError):
                 message = "Raster processing failed. Check the downloaded TIFFs or try a smaller radius."
@@ -155,7 +181,7 @@ def create_app(output_root=None):
                     raise InputError("Choose feet or meters.")
                 body["radius"] = float(body.get("radius", 0))
                 radius_in_meters(body["radius"], body["unit"])
-                for field, default in (("usable_fraction", .65), ("panel_kw_per_m2", .2)):
+                for field, default in (("usable_fraction", 0.65), ("panel_kw_per_m2", 0.2)):
                     body[field] = float(body.get(field, default))
                     if not math.isfinite(body[field]) or not 0 < body[field] <= 1:
                         raise InputError("Roof fraction and panel density must be greater than 0 and at most 1.")
@@ -193,8 +219,15 @@ def create_app(output_root=None):
                 if identity in seen:
                     continue
                 seen.add(identity)
-                runs.append({"job_id": job_id, "address": address, "demo": result.get("demo", False),
-                             "radius_meters": result["request"].get("radius_meters"), "completed_at": result.get("completed_at")})
+                runs.append(
+                    {
+                        "job_id": job_id,
+                        "address": address,
+                        "demo": result.get("demo", False),
+                        "radius_meters": result["request"].get("radius_meters"),
+                        "completed_at": result.get("completed_at"),
+                    }
+                )
         return jsonify(runs)
 
     @app.post("/api/plan/<job_id>")
@@ -232,8 +265,9 @@ def create_app(output_root=None):
             output = create_pdf_report(result, output_root / job_id, models)
         except InputError as exc:
             return jsonify(error=str(exc)), 400
-        return send_file(output, mimetype="application/pdf", as_attachment=True,
-                         download_name=f"roofready-{job_id}.pdf", max_age=0)
+        return send_file(
+            output, mimetype="application/pdf", as_attachment=True, download_name=f"roofready-{job_id}.pdf", max_age=0
+        )
 
     @app.post("/api/addresses/<job_id>")
     def resolve_saved_addresses(job_id):
@@ -251,22 +285,27 @@ def create_app(output_root=None):
                 return jsonify(error="Wait for the current analysis to finish."), 409
             result = json.loads(json.dumps(job["result"]))
             job.update(status="running", message="Looking up roof addresses…")
+
         def resolve():
             def progress(message):
                 with lock:
                     jobs[job_id]["message"] = message
+
             try:
                 add_roof_addresses(result, key, progress)
                 save_report(result, output_root / job_id)
                 message = "Roof address lookup complete"
             except Exception:
                 details = traceback.format_exc()
-                app.logger.error("Address lookup for %s failed:\n%s", job_id, details.replace(key, "[redacted]") if key else details)
+                app.logger.error(
+                    "Address lookup for %s failed:\n%s", job_id, details.replace(key, "[redacted]") if key else details
+                )
                 message = "Address lookup could not finish; previous results retained."
                 with lock:
                     result.update(jobs[job_id]["result"])
             with lock:
                 jobs[job_id].update(status="complete", message=message, result=result)
+
         executor.submit(resolve)
         return jsonify(job_id=job_id), 202
 
@@ -275,11 +314,21 @@ def create_app(output_root=None):
         with lock:
             if job_id not in jobs or jobs[job_id]["status"] != "complete":
                 abort(404)
-        if filename not in {"aerial.png", "sunlight.png", "aerial.jpg", "sunlight.webp", "roofs.csv", "roofs.geojson", "results.json", "summary.txt",
-                            "clipped_roof_mask.tif", "clipped_annual_flux.tif", "clipped_dsm.tif"}:
+        if filename not in {
+            "aerial.png",
+            "sunlight.png",
+            "aerial.jpg",
+            "sunlight.webp",
+            "roofs.csv",
+            "roofs.geojson",
+            "results.json",
+            "summary.txt",
+            "clipped_roof_mask.tif",
+            "clipped_annual_flux.tif",
+            "clipped_dsm.tif",
+        }:
             abort(404)
-        return send_from_directory(output_root / job_id, filename,
-                                   as_attachment=not filename.endswith(".png"))
+        return send_from_directory(output_root / job_id, filename, as_attachment=not filename.endswith(".png"))
 
     app.extensions["roofready_executor"] = executor
     return app

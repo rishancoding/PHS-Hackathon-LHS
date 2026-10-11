@@ -11,7 +11,9 @@ from solar_address import GEOCODING_URL, InputError, get_json
 def add_roof_addresses(result, api_key=None, progress=lambda message: None):
     if result.get("demo"):
         for index, roof in enumerate(result["roofs"], 1):
-            roof["properties"].update(address=f"{100 + index * 2} Demo Solar Lane (synthetic)", address_status="synthetic")
+            roof["properties"].update(
+                address=f"{100 + index * 2} Demo Solar Lane (synthetic)", address_status="synthetic"
+            )
         return result
     points = {}
     for roof in result["roofs"]:
@@ -30,7 +32,9 @@ def add_roof_addresses(result, api_key=None, progress=lambda message: None):
 
     def lookup(latlng):
         try:
-            return get_json(GEOCODING_URL, {"latlng": latlng, "result_type": "street_address|premise", "key": api_key}, timeout=8)
+            return get_json(
+                GEOCODING_URL, {"latlng": latlng, "result_type": "street_address|premise", "key": api_key}, timeout=8
+            )
         except InputError:
             return {"status": "LOOKUP_FAILED"}
 
@@ -40,7 +44,9 @@ def add_roof_addresses(result, api_key=None, progress=lambda message: None):
     progress(f"Looking up roof addresses (0/{len(points)})…")
     # Keep only four requests in flight; stop scheduling after a service/key failure.
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futures = {pool.submit(lookup, latlng): latlng for latlng in [next(pending) for _ in range(min(4, len(points)))]}
+        futures = {
+            pool.submit(lookup, latlng): latlng for latlng in [next(pending) for _ in range(min(4, len(points)))]
+        }
         while futures:
             done, _ = wait(futures, return_when=FIRST_COMPLETED)
             for future in done:
@@ -59,10 +65,16 @@ def add_roof_addresses(result, api_key=None, progress=lambda message: None):
                     matches = []
                     for candidate in candidates:
                         location = candidate.get("geometry", {}).get("location", {})
-                        if "lng" in location and "lat" in location and polygon.covers(Point(location["lng"], location["lat"])):
+                        if (
+                            "lng" in location
+                            and "lat" in location
+                            and polygon.covers(Point(location["lng"], location["lat"]))
+                        ):
                             matches.append(candidate)
-                    props.update(address=(matches or candidates)[0]["formatted_address"],
-                                 address_status="reverse_geocoded" if matches else "nearby_address")
+                    props.update(
+                        address=(matches or candidates)[0]["formatted_address"],
+                        address_status="reverse_geocoded" if matches else "nearby_address",
+                    )
             progress(f"Looking up roof addresses ({completed}/{len(points)})…")
             if not unavailable:
                 for _ in range(4 - len(futures)):
@@ -78,14 +90,18 @@ def describe_results(result):
     radius = result["request"]["radius_meters"]
     coverage = result["analysis"]["flux_coverage_percent"]
     prefix = "This synthetic demo" if result.get("demo") else "The search"
-    findings = (f"{prefix} found {count} candidate roof regions within {radius:,.0f} meters of "
-                f"{result['request']['address']}, with sunlight data covering {coverage:,.1f}% of the search area. ")
+    findings = (
+        f"{prefix} found {count} candidate roof regions within {radius:,.0f} meters of "
+        f"{result['request']['address']}, with sunlight data covering {coverage:,.1f}% of the search area. "
+    )
     ranked = [r for r in result["roofs"] if r["properties"].get("estimated_energy_kwh_year") is not None]
     if ranked:
         best = max(ranked, key=lambda r: r["properties"]["estimated_energy_kwh_year"])
         props = best["properties"]
         address = props.get("address", "Address unavailable")
-        label = address if address not in ("Address unavailable", "Address not looked up") else f"candidate {props['id']}"
+        label = (
+            address if address not in ("Address unavailable", "Address not looked up") else f"candidate {props['id']}"
+        )
         if props.get("address_status") == "nearby_address":
             label = f"the roof near {address} (address approximate)"
         findings += f"The highest-ranked region is {label}, with an estimated {props['estimated_energy_kwh_year']:,.0f} kWh/year of screening potential. "
@@ -93,21 +109,34 @@ def describe_results(result):
     if plan:
         model = plan.get("panel_model")
         model_label = f" using {model['manufacturer']} {model['model_name']}" if model else ""
-        findings += (f"Your proposed {plan['panel_count']}-panel layout{model_label} is estimated to cost ${plan['estimated_cost_usd']:,.0f} "
-                     f"and produce {plan['estimated_energy_kwh_year']:,.0f} kWh/year. ")
-        findings += ("It meets the annual energy target under the current assumptions." if plan["target_met"] else
-                     f"It leaves a shortfall of {plan['energy_shortfall_kwh_year']:,.0f} kWh/year against your target.")
+        findings += (
+            f"Your proposed {plan['panel_count']}-panel layout{model_label} is estimated to cost ${plan['estimated_cost_usd']:,.0f} "
+            f"and produce {plan['estimated_energy_kwh_year']:,.0f} kWh/year. "
+        )
+        findings += (
+            "It meets the annual energy target under the current assumptions."
+            if plan["target_met"]
+            else f"It leaves a shortfall of {plan['energy_shortfall_kwh_year']:,.0f} kWh/year against your target."
+        )
         if plan.get("budget_includes_installation") is False:
-            findings += (f" Your ${plan['budget_usd']:,.0f} budget covers module hardware only "
-                         f"(${plan['budget_cost_usd']:,.0f}); other equipment and installation "
-                         f"(${plan['estimated_other_equipment_installation_cost_usd']:,.0f}) cost extra.")
+            findings += (
+                f" Your ${plan['budget_usd']:,.0f} budget covers module hardware only "
+                f"(${plan['budget_cost_usd']:,.0f}); other equipment and installation "
+                f"(${plan['estimated_other_equipment_installation_cost_usd']:,.0f}) cost extra."
+            )
     elif not ranked:
         findings += "No roof regions with usable sunlight data were available to estimate solar potential."
     impact = result.get("impact")
     if plan and impact and impact.get("annual_bill_savings_usd"):
-        payback = f", about a {impact['simple_payback_years']:g}-year simple payback" if impact.get("simple_payback_years") else ""
-        findings += (f" At {impact['price_region']} average electricity prices that is roughly ${impact['annual_bill_savings_usd']:,.0f} a year in bill savings"
-                     f"{payback}, and about {impact['co2_avoided_tonnes_per_year']:,.1f} t of CO2 avoided per year (screening estimates, no incentives).")
+        payback = (
+            f", about a {impact['simple_payback_years']:g}-year simple payback"
+            if impact.get("simple_payback_years")
+            else ""
+        )
+        findings += (
+            f" At {impact['price_region']} average electricity prices that is roughly ${impact['annual_bill_savings_usd']:,.0f} a year in bill savings"
+            f"{payback}, and about {impact['co2_avoided_tonnes_per_year']:,.1f} t of CO2 avoided per year (screening estimates, no incentives)."
+        )
     comparison = result.get("panel_recommendations")
     if comparison:
         meeting = sum(item["target_met"] for item in comparison["recommendations"])
@@ -117,25 +146,34 @@ def describe_results(result):
         if existing:
             roofs_with = len({feature["properties"]["roof_id"] for feature in existing})
             area = sum(feature["properties"]["area_m2"] for feature in existing)
-            findings += (f" Possible existing solar panels were flagged on {roofs_with} roof region{'s' if roofs_with != 1 else ''} "
-                         f"({area:,.0f} m²); new panels avoid those areas. This is a color-based check, so verify it on the aerial image.")
+            findings += (
+                f" Possible existing solar panels were flagged on {roofs_with} roof region{'s' if roofs_with != 1 else ''} "
+                f"({area:,.0f} m²); new panels avoid those areas. This is a color-based check, so verify it on the aerial image."
+            )
         else:
             findings += " No existing solar panels were flagged by the color-based check."
     zones = result.get("blocked_zones")
     if zones:
-        findings += (f" You marked {len(zones)} no-panel zone{'s' if len(zones) != 1 else ''} "
-                     f"({sum(zone['area_m2'] for zone in zones):,.0f} m² of map area); new panels are kept out of them.")
+        findings += (
+            f" You marked {len(zones)} no-panel zone{'s' if len(zones) != 1 else ''} "
+            f"({sum(zone['area_m2'] for zone in zones):,.0f} m² of map area); new panels are kept out of them."
+        )
     selection = result.get("roof_selection")
     if selection:
-        findings += (f" Panel planning uses {len(selection['included_roof_ids'])} included roof regions; "
-                     f"{len(selection['excluded_roof_ids'])} were excluded by you. Roof-potential rankings still show all detected candidates.")
+        findings += (
+            f" Panel planning uses {len(selection['included_roof_ids'])} included roof regions; "
+            f"{len(selection['excluded_roof_ids'])} were excluded by you. Roof-potential rankings still show all detected candidates."
+        )
     next_steps = (
         "Review the roof outlines and address matches, then confirm ownership and existing panels or obstructions. "
         "Ask a qualified solar installer to verify usable roof area, condition, shading, setbacks, and electrical capacity, "
         "and obtain a site-specific layout and quote before making an installation decision."
     )
     if comparison:
-        next_steps = "Compare panel alternatives for installed cost, roof space and documented warranty coverage; confirm model-specific mounting and electrical compatibility. " + next_steps
+        next_steps = (
+            "Compare panel alternatives for installed cost, roof space and documented warranty coverage; confirm model-specific mounting and electrical compatibility. "
+            + next_steps
+        )
     if not count:
         next_steps = "Try another address or radius and check Google Solar coverage. " + next_steps
     elif plan and not plan["target_met"]:
@@ -151,12 +189,30 @@ def save_report(result, directory):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "results.json").write_text(json.dumps(result, indent=2, allow_nan=False))
-    (directory / "summary.txt").write_text(result["report"]["findings"] + "\n\nNext steps\n" + result["report"]["next_steps"] + "\n")
+    (directory / "summary.txt").write_text(
+        result["report"]["findings"] + "\n\nNext steps\n" + result["report"]["next_steps"] + "\n"
+    )
     features = [{k: v for k, v in roof.items() if k != "preview_geometry"} for roof in result["roofs"]]
-    (directory / "roofs.geojson").write_text(json.dumps({"type": "FeatureCollection", "features": features}, allow_nan=False))
-    columns = ["rank", "id", "address", "address_status", "area_m2", "area_ft2", "annual_yield_kwh_per_kw",
-               "estimated_capacity_kw", "estimated_energy_kwh_year", "flux_coverage_percent", "partial_roof", "existing_panel_area_m2",
-               "latitude", "longitude", "mean_elevation_m"]
+    (directory / "roofs.geojson").write_text(
+        json.dumps({"type": "FeatureCollection", "features": features}, allow_nan=False)
+    )
+    columns = [
+        "rank",
+        "id",
+        "address",
+        "address_status",
+        "area_m2",
+        "area_ft2",
+        "annual_yield_kwh_per_kw",
+        "estimated_capacity_kw",
+        "estimated_energy_kwh_year",
+        "flux_coverage_percent",
+        "partial_roof",
+        "existing_panel_area_m2",
+        "latitude",
+        "longitude",
+        "mean_elevation_m",
+    ]
     with (directory / "roofs.csv").open("w", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=columns)
         writer.writeheader()

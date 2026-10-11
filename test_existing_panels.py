@@ -33,7 +33,7 @@ def scene(patch_color=None, textured=True, size=200):
 class ExistingPanelTests(unittest.TestCase):
     def test_textured_blue_array_is_flagged_on_its_roof(self):
         rgb, labels = scene(PANEL)
-        found = detect_existing_panels(rgb, labels, .1)
+        found = detect_existing_panels(rgb, labels, 0.1)
         self.assertEqual(len(found), 1)
         polygon, roof_label, area = found[0]
         self.assertEqual(roof_label, 7)
@@ -44,12 +44,12 @@ class ExistingPanelTests(unittest.TestCase):
         for color, textured in ((None, False), ((40, 52, 82), False), ((40, 52, 82), True), (PANEL, False)):
             with self.subTest(color=color, textured=textured):
                 rgb, labels = scene(color, textured)
-                self.assertEqual(detect_existing_panels(rgb, labels, .1), [])
+                self.assertEqual(detect_existing_panels(rgb, labels, 0.1), [])
 
     def test_off_roof_blue_is_ignored(self):
         rgb, labels = scene(PANEL)
         labels[:] = 0
-        self.assertEqual(detect_existing_panels(rgb, labels, .1), [])
+        self.assertEqual(detect_existing_panels(rgb, labels, 0.1), [])
 
     def test_new_layout_avoids_flagged_area_and_findings_say_so(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -62,7 +62,9 @@ class ExistingPanelTests(unittest.TestCase):
         self.assertGreater(result["proposal"]["panel_count"], 0)
         self.assertFalse(any(shape(p["preview_geometry"]).intersects(flagged) for p in result["proposal"]["panels"]))
         self.assertIn("Possible existing solar panels", result["report"]["findings"])
-        roof = next(r for r in result["roofs"] if r["properties"]["id"] == result["existing_panels"][0]["properties"]["roof_id"])
+        roof = next(
+            r for r in result["roofs"] if r["properties"]["id"] == result["existing_panels"][0]["properties"]["roof_id"]
+        )
         self.assertGreater(roof["properties"]["existing_panel_area_m2"], 0)
 
 

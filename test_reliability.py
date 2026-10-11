@@ -20,8 +20,13 @@ def saved_run(root, name, request, mtime=None):
     _, paths = create_demo(folder / "layers")
     for layer in paths.values():
         layer.rename(folder / "layers" / layer.name)
-    result = {"request": request, "roofs": [], "summary": {}, "analysis": {"flux_coverage_percent": 100},
-              "imagery": {"imageryQuality": "HIGH", "imageryDate": {"year": 2024, "month": 5, "day": 1}}}
+    result = {
+        "request": request,
+        "roofs": [],
+        "summary": {},
+        "analysis": {"flux_coverage_percent": 100},
+        "imagery": {"imageryQuality": "HIGH", "imageryDate": {"year": 2024, "month": 5, "day": 1}},
+    }
     (folder / "results.json").write_text(json.dumps(result))
     if mtime:
         os.utime(folder / "results.json", (mtime, mtime))
@@ -40,9 +45,11 @@ class ImageryReuseTests(unittest.TestCase):
 
     def test_repeat_search_reuses_saved_layers_without_solar_requests(self):
         saved_run(self.root, "earlier", self.request)
-        with patch("process_solar_layers.prepare_request", return_value=json.loads(json.dumps(self.request))), \
-                patch("process_solar_layers.get_json", side_effect=AssertionError("Solar API called")) as solar, \
-                patch("process_solar_layers.download_layers", side_effect=AssertionError("download")):
+        with (
+            patch("process_solar_layers.prepare_request", return_value=json.loads(json.dumps(self.request))),
+            patch("process_solar_layers.get_json", side_effect=AssertionError("Solar API called")) as solar,
+            patch("process_solar_layers.download_layers", side_effect=AssertionError("download")),
+        ):
             result = run_pipeline("123 Test St", 100, "meters", "key", self.root / "new")
         solar.assert_not_called()
         self.assertIn("reused_from", result["imagery"])
@@ -50,13 +57,16 @@ class ImageryReuseTests(unittest.TestCase):
         self.assertTrue((self.root / "new" / "layers" / "rgb.tif").is_file())
 
     def test_reuse_can_be_turned_off_and_ignores_other_locations(self):
-        other = json.loads(json.dumps(self.request)); other["latitude"] += .01
+        other = json.loads(json.dumps(self.request))
+        other["latitude"] += 0.01
         saved_run(self.root, "elsewhere", other)
         self.assertIsNone(find_saved_layers(self.root, self.request))
         saved_run(self.root, "same", self.request)
         self.assertIsNotNone(find_saved_layers(self.root, self.request))
-        with patch("process_solar_layers.prepare_request", return_value=json.loads(json.dumps(self.request))), \
-                patch("process_solar_layers.get_json", side_effect=InputError("network")) as solar:
+        with (
+            patch("process_solar_layers.prepare_request", return_value=json.loads(json.dumps(self.request))),
+            patch("process_solar_layers.get_json", side_effect=InputError("network")) as solar,
+        ):
             with self.assertRaises(InputError):
                 run_pipeline("123 Test St", 100, "meters", "key", self.root / "fresh", reuse_imagery=False)
         solar.assert_called_once()
@@ -65,14 +75,18 @@ class ImageryReuseTests(unittest.TestCase):
         _, paths = create_demo(self.root / "fallback-layers")
         data = {"imageryQuality": "MEDIUM"}
         calls = []
+
         def solar(url, params, **kwargs):
             calls.append(params["requiredQuality"])
             if params["requiredQuality"] == "HIGH":
                 raise InputError("Google API HTTP 404: Requested entity was not found.")
             return data
-        with patch("process_solar_layers.prepare_request", return_value=json.loads(json.dumps(self.request))), \
-                patch("process_solar_layers.get_json", side_effect=solar), \
-                patch("process_solar_layers.download_layers", return_value=paths):
+
+        with (
+            patch("process_solar_layers.prepare_request", return_value=json.loads(json.dumps(self.request))),
+            patch("process_solar_layers.get_json", side_effect=solar),
+            patch("process_solar_layers.download_layers", return_value=paths),
+        ):
             result = run_pipeline("123 Test St", 100, "meters", "key", self.root / "medium", reuse_imagery=False)
         self.assertEqual(calls, ["HIGH", "MEDIUM"])
         self.assertEqual(result["imagery"]["imageryQuality"], "MEDIUM")
@@ -101,13 +115,20 @@ class AppReliabilityTests(unittest.TestCase):
             app = create_app(directory)
             client = app.test_client()
             try:
-                with patch("roofready_app.run_pipeline", side_effect=RuntimeError("boom secret-test-key")), \
-                        patch.object(app.logger, "error") as log:
-                    job = client.post("/api/analyze", headers={"Origin": "http://localhost"}, json={
-                        "address": "1 Main St", "radius": 50, "unit": "meters", "api_key": "secret-test-key"}).get_json()["job_id"]
+                with (
+                    patch("roofready_app.run_pipeline", side_effect=RuntimeError("boom secret-test-key")),
+                    patch.object(app.logger, "error") as log,
+                ):
+                    job = client.post(
+                        "/api/analyze",
+                        headers={"Origin": "http://localhost"},
+                        json={"address": "1 Main St", "radius": 50, "unit": "meters", "api_key": "secret-test-key"},
+                    ).get_json()["job_id"]
                     deadline = time.monotonic() + 10
-                    while time.monotonic() < deadline and client.get(f"/api/jobs/{job}").get_json()["status"] == "running":
-                        time.sleep(.05)
+                    while (
+                        time.monotonic() < deadline and client.get(f"/api/jobs/{job}").get_json()["status"] == "running"
+                    ):
+                        time.sleep(0.05)
                     state = client.get(f"/api/jobs/{job}").get_json()
             finally:
                 app.extensions["roofready_executor"].shutdown(wait=True)

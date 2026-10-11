@@ -14,6 +14,8 @@ from urllib.request import urlopen
 
 GEOCODING_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 SOLAR_URL = "https://solar.googleapis.com/v1/dataLayers:get"
+
+
 def local_api_key():
     """Read the ignored local key file without publishing credentials."""
     env_path = Path(__file__).resolve().parent / ".env"
@@ -40,11 +42,12 @@ def https_context():
     """Use installed CA certificates, including the project's local environment."""
     try:
         import certifi
+
         return ssl.create_default_context(cafile=certifi.where())
     except ImportError:
-        bundles = sorted((Path(__file__).resolve().parent / ".venv" / "lib").glob(
-            "python*/site-packages/certifi/cacert.pem"
-        ))
+        bundles = sorted(
+            (Path(__file__).resolve().parent / ".venv" / "lib").glob("python*/site-packages/certifi/cacert.pem")
+        )
         if bundles:
             return ssl.create_default_context(cafile=str(bundles[-1]))
         return ssl.create_default_context()
@@ -93,8 +96,7 @@ def validate_geocode(result):
         for component in result.get("address_components", [])
         for kind in component.get("types", [])
     }
-    if (components.get("country") != "US"
-            or components.get("administrative_area_level_1") not in ALLOWED_STATES):
+    if components.get("country") != "US" or components.get("administrative_area_level_1") not in ALLOWED_STATES:
         raise InputError(
             "Not allowed: the address must be in the lower 48 United States "
             "or Washington, DC. Alaska, Hawaii, and US territories are excluded."
@@ -105,8 +107,7 @@ def validate_geocode(result):
         raise InputError("Enter a street address with a building number, city, and state.")
     location = result.get("geometry", {}).get("location", {})
     latitude, longitude = location.get("lat"), location.get("lng")
-    if not all(isinstance(v, (int, float)) and math.isfinite(v)
-               for v in (latitude, longitude)):
+    if not all(isinstance(v, (int, float)) and math.isfinite(v) for v in (latitude, longitude)):
         raise InputError("Google did not return valid coordinates for this address.")
     if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
         raise InputError("Google returned coordinates outside valid latitude/longitude ranges.")
@@ -132,8 +133,14 @@ def geocode_address(address, api_key, include_state=False):
     latitude, longitude = validate_geocode(result)
     answer = (result.get("formatted_address", address), latitude, longitude)
     if include_state:
-        state = next((c.get("short_name") for c in result.get("address_components", [])
-                      if "administrative_area_level_1" in c.get("types", [])), None)
+        state = next(
+            (
+                c.get("short_name")
+                for c in result.get("address_components", [])
+                if "administrative_area_level_1" in c.get("types", [])
+            ),
+            None,
+        )
         return (*answer, state, street_address(result))
     return answer
 
@@ -144,8 +151,10 @@ def street_address(result):
     for component in result.get("address_components", []):
         for kind in component.get("types", []):
             parts.setdefault(kind, component)
+
     def name(kind, form="short_name"):
         return parts.get(kind, {}).get(form, "")
+
     street = f"{name('street_number')} {name('route')}".strip()
     city = name("locality", "long_name") or name("sublocality", "long_name") or name("postal_town", "long_name")
     region = f"{name('administrative_area_level_1')} {name('postal_code')}".strip()

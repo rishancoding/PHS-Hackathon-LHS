@@ -8,12 +8,22 @@ from solar_address import InputError
 
 
 def fixture():
-    return {"analysis": {"resolution_m": 1},
-            # Losses off so these tests check geometry and budget math exactly.
-            "assumptions": {"panel_kw_per_m2": .2, "usable_roof_fraction": .65, "system_derate": 1},
-            "roofs": [{"preview_geometry": mapping(box(0, 0, 20, 20)),
-                       "properties": {"id": "roof-1", "area_m2": 400,
-                                      "flux_coverage_percent": 100, "annual_yield_kwh_per_kw": 1000}}]}
+    return {
+        "analysis": {"resolution_m": 1},
+        # Losses off so these tests check geometry and budget math exactly.
+        "assumptions": {"panel_kw_per_m2": 0.2, "usable_roof_fraction": 0.65, "system_derate": 1},
+        "roofs": [
+            {
+                "preview_geometry": mapping(box(0, 0, 20, 20)),
+                "properties": {
+                    "id": "roof-1",
+                    "area_m2": 400,
+                    "flux_coverage_percent": 100,
+                    "annual_yield_kwh_per_kw": 1000,
+                },
+            }
+        ],
+    }
 
 
 def sunlight_tables(flux):
@@ -24,7 +34,8 @@ def sunlight_tables(flux):
 
 class AccuracyTests(unittest.TestCase):
     def test_system_losses_reduce_energy_by_the_derate(self):
-        data = fixture(); del data["assumptions"]["system_derate"]
+        data = fixture()
+        del data["assumptions"]["system_derate"]
         plan = propose_panels(data, budget_usd=1200, energy_target_kwh_year=1000, installed_cost_per_watt=3)
         self.assertAlmostEqual(plan["estimated_energy_kwh_year"], 400 * DEFAULT_SYSTEM_DERATE)
 
@@ -45,12 +56,18 @@ class AccuracyTests(unittest.TestCase):
 
     def test_sunniest_spots_fill_first(self):
         data = fixture()
-        flux = np.full((20, 20), 1000.0); flux[:, 12:] = 1500
-        plan = propose_panels(data, budget_usd=3600, energy_target_kwh_year=100000, installed_cost_per_watt=3,
-                              sunlight=sunlight_tables(flux))
+        flux = np.full((20, 20), 1000.0)
+        flux[:, 12:] = 1500
+        plan = propose_panels(
+            data,
+            budget_usd=3600,
+            energy_target_kwh_year=100000,
+            installed_cost_per_watt=3,
+            sunlight=sunlight_tables(flux),
+        )
         self.assertEqual(plan["panel_count"], 3)
         self.assertTrue(all(shape(panel["preview_geometry"]).bounds[0] >= 12 for panel in plan["panels"]))
-        self.assertAlmostEqual(plan["estimated_energy_kwh_year"], 3 * .4 * 1500)
+        self.assertAlmostEqual(plan["estimated_energy_kwh_year"], 3 * 0.4 * 1500)
 
 
 class PanelPlanTests(unittest.TestCase):
