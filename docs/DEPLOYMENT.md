@@ -47,8 +47,17 @@ This is a shared hackathon demo: saved searches and reports are accessible to
 other visitors. Use the sample area or public addresses. The page shows this
 notice when hosted. Free hosting has ephemeral files; saved imagery and searches
 can disappear after restarts or redeploys. It also sleeps when idle, so open it
-before judging and keep a local demo and downloaded PDF ready. Larger live
-searches can exceed the free service's memory; the sample is the best first check.
+before judging and keep a local demo and downloaded PDF ready.
+
+The free plan has 512 MB of memory. Going over it ("Ran out of memory" on the
+service's Events page) restarts the service, which clears every search and cuts
+off requests in progress, including advisor answers. `render.yaml` therefore caps
+the analysis grid at 1,400 pixels per side (`PHOTOGRID_MAX_GRID_PIXELS`; 0.14 m
+pixels for a 100 m search instead of 0.1 m), which roughly halves a search's peak
+memory, and limits GDAL's cache, OpenBLAS threads and malloc arenas, which
+otherwise size themselves for the host machine. Run one search at a time, since
+simultaneous searches and PDF downloads add up. A paid instance with more memory
+can raise or remove the cap.
 
 Provider references: [Flask deployment](https://render.com/docs/deploy-flask),
 [Blueprint configuration](https://render.com/docs/blueprint-spec),

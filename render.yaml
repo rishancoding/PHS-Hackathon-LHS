@@ -14,6 +14,17 @@ services:
         value: 3.12.12
       - key: PHOTOGRID_OUTPUT_ROOT
         value: /tmp/photogrid-outputs
+      # The free plan has 512 MB; going over restarts the service and clears every search.
+      # A 1,400-pixel analysis grid (0.14 m pixels for a 100 m search) halves a search's peak
+      # memory. GDAL's cache and OpenBLAS threads otherwise size themselves for the host machine.
+      - key: PHOTOGRID_MAX_GRID_PIXELS
+        value: "1400"
+      - key: GDAL_CACHEMAX
+        value: "64"
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: MALLOC_ARENA_MAX
+        value: "2"
       # Secrets: Render asks for these when the Blueprint is first created, never
       # stores them in this file, and later syncs leave them alone. Add or change
       # them on the service's Environment page.

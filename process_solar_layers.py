@@ -30,6 +30,15 @@ from solar_address import DEFAULT_API_KEY, InputError, SOLAR_URL, get_json, http
 from roof_details import save_report
 
 LAYERS = {"rgb": "rgbUrl", "mask": "maskUrl", "annual_flux": "annualFluxUrl", "dsm": "dsmUrl"}
+DEFAULT_MAX_GRID_PIXELS = 2000
+
+
+def max_grid_pixels():
+    """Largest analysis grid side. Peak memory grows with its square, so small hosts lower it."""
+    try:
+        return max(500, int(os.environ.get("PHOTOGRID_MAX_GRID_PIXELS") or DEFAULT_MAX_GRID_PIXELS))
+    except ValueError:
+        return DEFAULT_MAX_GRID_PIXELS
 
 
 def transform_geometry(function, geometry):
@@ -124,7 +133,7 @@ def metric_grid(latitude, longitude, radius, pixel_size):
     crs = CRS.from_epsg((32600 if latitude >= 0 else 32700) + zone)
     project = Transformer.from_crs("EPSG:4326", crs, always_xy=True)
     x, y = project.transform(longitude, latitude)
-    size = max(pixel_size, 2 * radius / 2000)
+    size = max(pixel_size, 2 * radius / max_grid_pixels())
     width = max(2, math.ceil(2 * radius / size))
     return {
         "crs": crs,

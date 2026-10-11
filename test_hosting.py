@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from process_solar_layers import metric_grid
 from roofready_app import create_app
 
 
@@ -59,6 +60,16 @@ class HostingTests(unittest.TestCase):
         self.assertIn(b"Shared hackathon demo", page.data)
         self.assertIn(b"PhotoGrid", page.data)
         self.assertNotIn(b"RoofReady", page.data)
+
+    def test_grid_cap_setting_limits_analysis_pixels(self):
+        # Render's free plan sets 1,400 to fit 512 MB; unset or invalid keeps the 2,000 default.
+        for setting, cap in (("1400", 1400), ("", 2000), ("lots", 2000)):
+            with patch.dict(os.environ, {"PHOTOGRID_MAX_GRID_PIXELS": setting}):
+                width = metric_grid(37.42, -122.08, 100, 0.1)["width"]
+            self.assertIn(width, (cap, cap + 1), setting)
+        with patch.dict(os.environ, {"PHOTOGRID_MAX_GRID_PIXELS": "1400"}):
+            # Small searches already fit, so they keep Google's full 0.1 m detail.
+            self.assertAlmostEqual(metric_grid(37.42, -122.08, 50, 0.1)["resolution"], 0.1)
 
     @patch("roofready_app.DEFAULT_API_KEY", "")
     def test_hosted_site_hides_key_box_when_server_has_a_google_key(self):

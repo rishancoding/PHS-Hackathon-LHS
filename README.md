@@ -126,7 +126,7 @@ A radius is measured from the center, up to 1,000 m (3,280.84 ft). The Solar API
 | 250–500 | 0.5 m |
 | 500–1,000 | 1 m |
 
-Processing uses at most 2,000 pixels per side, so very large circles are analyzed more coarsely and small roofs can be lost. Google's coverage and imagery date affect completeness.
+Processing uses at most 2,000 pixels per side (`PHOTOGRID_MAX_GRID_PIXELS`; the Render Blueprint uses 1,400 to fit the free plan's 512 MB, which means 0.14 m pixels for a 100 m search), so very large circles are analyzed more coarsely and small roofs can be lost. Google's coverage and imagery date affect completeness.
 
 ### Vercel hosting
 
