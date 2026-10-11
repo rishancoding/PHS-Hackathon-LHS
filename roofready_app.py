@@ -23,8 +23,18 @@ from panel_plan import load_sunlight
 from panel_recommendations import build_recommendations, validate_recommendation_inputs, load_catalog
 from solar_report import create_pdf_report
 from roof_details import add_roof_addresses, describe_results, save_report
+from project_store import configured_store, ProjectStorageError, SAFE_FOLDER, project_summary
 
 ROOT = Path(__file__).resolve().parent
+
+
+def project_asset_status(result, directory):
+    previews = result.get("preview_files") or {"aerial": "aerial.png", "sunlight": "sunlight.png"}
+    return {
+        "aerial_available": previews.get("aerial") in {"aerial.jpg", "aerial.png"} and (directory / previews["aerial"]).is_file(),
+        "sunlight_available": previews.get("sunlight") in {"sunlight.webp", "sunlight.png"} and (directory / previews["sunlight"]).is_file(),
+        "replanning_available": (directory / "clipped_annual_flux.tif").is_file(),
+    }
 
 
 def resolve_key(supplied=""):
@@ -32,7 +42,7 @@ def resolve_key(supplied=""):
     return (supplied or "").strip() or os.environ.get("GOOGLE_MAPS_API_KEY", DEFAULT_API_KEY).strip()
 
 
-def create_app(output_root=None):
+def create_app(output_root=None, project_store=None):
     app = Flask(__name__)
     render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
     trusted_hosts = ["localhost", "127.0.0.1"]
@@ -43,6 +53,8 @@ def create_app(output_root=None):
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=1, x_host=0, x_port=0, x_prefix=0)
     app.config.update(MAX_CONTENT_LENGTH=16384, TRUSTED_HOSTS=trusted_hosts)
     output_root = Path(output_root or os.environ.get("PHOTOGRID_OUTPUT_ROOT") or ROOT / "outputs")
+    # Explicit False lets offline tests opt out even when the laptop has Atlas configured.
+    store = configured_store() if project_store is None else project_store or None
     jobs = {}
     lock = Lock()
     executor = ThreadPoolExecutor(max_workers=1)
@@ -57,6 +69,11 @@ def create_app(output_root=None):
             try:
                 result = json.loads((folder / "results.json").read_text())
                 if "roofs" in result and "summary" in result and "request" in result:
+                    if "asset_job_id" in result:
+                        source = result["asset_job_id"]
+                        if not isinstance(source, str) or not SAFE_FOLDER.fullmatch(source):
+                            continue
+                        result["project_assets"] = project_asset_status(result, output_root / source)
                     describe_results(result)
                     result.setdefault(
                         "completed_at",
@@ -68,12 +85,20 @@ def create_app(output_root=None):
 
     sunlight_cache = {}
 
+    def asset_directory(job_id):
+        with lock:
+            result = jobs.get(job_id, {}).get("result", {})
+            source = result.get("asset_job_id", job_id)
+        if not isinstance(source, str) or not SAFE_FOLDER.fullmatch(source):
+            abort(400)
+        return output_root / source
+
     def sunlight_for(job_id):
         # Per-pixel sunlight for sunlight-aware placement; small cache so re-plans stay instant.
         if job_id not in sunlight_cache:
             if len(sunlight_cache) >= 3:
                 sunlight_cache.pop(next(iter(sunlight_cache)))
-            sunlight_cache[job_id] = load_sunlight(output_root / job_id)
+            sunlight_cache[job_id] = load_sunlight(asset_directory(job_id))
         return sunlight_cache[job_id]
 
     @app.before_request
@@ -91,6 +116,59 @@ def create_app(output_root=None):
     @app.get("/health")
     def health():
         return jsonify(status="ok", app="PhotoGrid")
+
+    @app.errorhandler(ProjectStorageError)
+    def project_storage_error(exc):
+        return jsonify(error=str(exc)), 503
+
+    @app.get("/api/projects")
+    def list_projects():
+        if store is None:
+            return jsonify(configured=False, projects=[], message="Cloud saving is not configured. Local searches still work.")
+        return jsonify(configured=True, projects=store.list())
+
+    @app.post("/api/projects")
+    def save_project():
+        body = request.get_json(silent=True)
+        if not isinstance(body, dict) or not isinstance(body.get("job_id"), str):
+            return jsonify(error="Choose a completed analysis to save."), 400
+        if store is None:
+            return jsonify(error="Cloud saving is not configured."), 503
+        with lock:
+            job = jobs.get(body["job_id"])
+            if job is None:
+                abort(404)
+            if job["status"] != "complete":
+                return jsonify(error="Wait for the analysis to finish before saving."), 409
+            result = deepcopy(job["result"])
+        source = result.get("asset_job_id", body["job_id"])
+        try:
+            project = store.save(body.get("name"), result, source)
+        except InputError as exc:
+            return jsonify(error=str(exc)), 400
+        return jsonify(project=project), 201
+
+    @app.post("/api/projects/<project_id>/open")
+    def open_project(project_id):
+        if store is None:
+            return jsonify(error="Cloud saving is not configured."), 503
+        document = store.get(project_id)
+        if document is None:
+            abort(404)
+        result = deepcopy(document.get("result"))
+        source = document.get("asset_job_id", "")
+        if not isinstance(result, dict) or not all(k in result for k in ("request", "analysis", "summary", "roofs")):
+            return jsonify(error="This saved project has an unsupported format."), 400
+        if not isinstance(source, str) or not SAFE_FOLDER.fullmatch(source):
+            return jsonify(error="This saved project has an invalid imagery reference."), 400
+        directory = output_root / source
+        result["asset_job_id"] = source
+        result["project_assets"] = project_asset_status(result, directory)
+        job_id = secrets.token_hex(12)
+        save_report(result, output_root / job_id)
+        with lock:
+            jobs[job_id] = {"status": "complete", "message": "Saved project opened", "result": result}
+        return jsonify(job_id=job_id, result=result, project=project_summary(document))
 
     @app.post("/api/address-suggestions")
     def suggest_addresses():
@@ -257,6 +335,8 @@ def create_app(output_root=None):
             if not job or job["status"] != "complete":
                 abort(404)
             result = dict(job["result"])
+        if result.get("project_assets", {}).get("replanning_available") is False:
+            return jsonify(error="The sunlight files for this project are unavailable. Run a new search to re-plan."), 409
         try:
             build_recommendations(result, **inputs, reuse_comparison=True, sunlight=sunlight_for(job_id))
         except InputError as exc:
@@ -275,7 +355,7 @@ def create_app(output_root=None):
             result = deepcopy(job["result"])
         try:
             models = request.args.getlist("model")
-            output = create_pdf_report(result, output_root / job_id, models)
+            output = create_pdf_report(result, asset_directory(job_id), models)
         except InputError as exc:
             return jsonify(error=str(exc)), 400
         return send_file(
@@ -341,9 +421,11 @@ def create_app(output_root=None):
             "clipped_dsm.tif",
         }:
             abort(404)
-        return send_from_directory(output_root / job_id, filename, as_attachment=not filename.endswith(".png"))
+        directory = asset_directory(job_id) if filename.endswith((".png", ".jpg", ".webp", ".tif")) else output_root / job_id
+        return send_from_directory(directory, filename, as_attachment=not filename.endswith((".png", ".jpg", ".webp")))
 
     app.extensions["roofready_executor"] = executor
+    app.extensions["photogrid_projects"] = store
     return app
 
 

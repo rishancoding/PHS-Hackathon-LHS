@@ -11,7 +11,8 @@ let planUpdateActive=false, pendingPanelModelId=null;
 let excludedRoofIds=new Set(), comparisonIds=[], comparisonJob=null;
 // No-panel zones: [left, top, right, bottom] in preview pixels. Saved = applied to the current plan.
 let savedZones=[], draftZones=[], zonesJob=null, drawMode=false, zoneStart=null, zoneBusy=false;
-function busy(value) { zoneBusy=value; $('draw-zone').disabled=value; renderZones(); $('analyze').disabled=value; $('demo-button').disabled=value; $('lookup-addresses').disabled=value; $('replan').disabled=value; $('include-all-roofs').disabled=value; $('budget-includes-installation').disabled=value; document.querySelectorAll('#roof-selection-options input').forEach(input=>input.disabled=value); }
+const canReplan=()=>currentResult?.project_assets?.replanning_available!==false;
+function busy(value) { zoneBusy=value; $('draw-zone').disabled=value || !canReplan(); renderZones(); $('analyze').disabled=value; $('demo-button').disabled=value; $('lookup-addresses').disabled=value; $('replan').disabled=value || !canReplan(); $('include-all-roofs').disabled=value || !canReplan(); $('budget-includes-installation').disabled=value || !canReplan(); document.querySelectorAll('#roof-selection-options input').forEach(input=>input.disabled=value || !canReplan()); window.photogridProjects?.setBusy(value); }
 function error(message) { $('error').textContent=message; $('error').hidden=false; toast(''); }
 let toastTimer;
 // Short status toast: progress messages stay until replaced; results fade out on their own.
@@ -43,8 +44,8 @@ function renderZones() {
   }
   const dirty=zonesDirty();
   $('zone-panel').hidden=!drawMode && draftZones.length===0 && !dirty;
-  $('apply-zones').disabled=zoneBusy || !dirty || !currentJob; $('clear-zones').disabled=zoneBusy || draftZones.length===0;
-  $('zone-roof').disabled=zoneBusy || !activeRoof;
+  $('apply-zones').disabled=zoneBusy || !dirty || !currentJob || !canReplan(); $('clear-zones').disabled=zoneBusy || draftZones.length===0 || !canReplan();
+  $('zone-roof').disabled=zoneBusy || !activeRoof || !canReplan();
   $('zone-status').textContent=dirty ? (draftZones.length ? 'Changes not applied yet' : 'All zones removed. Apply & re-plan to update the layout.') : '';
 }
 function setDrawMode(on) {
@@ -157,8 +158,14 @@ function render(result,job,preserveView=false) {
   // Older saved runs used PNG previews.
   const previews=result.preview_files || {aerial:'aerial.png',sunlight:'sunlight.png'};
   for(const [id,file] of [['aerial',previews.aerial],['sunlight',previews.sunlight]]) {
-    const image=$(id); image.setAttribute('href',`/results/${job}/${file}`); image.setAttribute('width',width); image.setAttribute('height',height);
+    const image=$(id), available=result.project_assets?.[`${id}_available`]!==false;
+    if(available)image.setAttribute('href',`/results/${job}/${file}`);else image.removeAttribute('href');
+    image.setAttribute('width',width); image.setAttribute('height',height);
   }
+  const missingAssets=result.project_assets && (!result.project_assets.aerial_available || !result.project_assets.replanning_available);
+  $('map-assets-notice').hidden=!missingAssets;
+  $('map-assets-notice').textContent=missingAssets ? 'Saved findings and panel layout restored. Some imagery or sunlight files are unavailable; run a new search to restore imagery and re-planning.' : '';
+  $('heat-toggle').disabled=result.project_assets?.sunlight_available===false;
   $('center-marker').setAttribute('transform',`translate(${width/2} ${height/2})`);
   if(!preserveView) {$('heat-toggle').checked=false; $('sunlight').setAttribute('visibility','hidden');}
   renderAddressCallout(result);
@@ -205,6 +212,7 @@ function render(result,job,preserveView=false) {
   renderProposal(result.proposal);
   renderRecommendations(result.panel_recommendations);
   renderDashboard(result);
+  window.photogridProjects?.render(result,job);
   renderCatalogTable(result.panel_recommendations);
   $('findings').textContent=result.report?.findings || 'Update the panel plan to generate a summary for this saved search.';
   $('next-steps').textContent=result.report?.next_steps || 'Verify roof addresses and usable area with a qualified solar installer before proceeding.';
@@ -296,7 +304,7 @@ function renderRecommendations(data) {
   }
   $('budget-includes-installation').checked=data.budget_includes_installation!==false;renderBudgetScope();
   $('budget').value=data.budget_usd; $('energy-target').value=data.energy_target_kwh_year;
-  $('space-limit').value=data.space_limit_m2==null ? '' : +(data.space_limit_m2/($('space-unit').value==='ft2' ? SQ_FT : 1)).toFixed(1); $('panel-priority').value=data.priority;
+  $('space-limit').value=data.space_limit_m2==null ? '' : +(data.space_limit_m2/($('space-unit').value==='ft2' ? SQ_FT : 1)).toPrecision(12); $('panel-priority').value=data.priority;
   $('derate').value=currentResult?.assumptions?.system_derate ?? .85;
   const best=data.recommendations.find(item=>item.recommended) || data.recommendations[0];
   const chosen=data.recommendations.find(item=>item.model.model_id===data.selected_model_id) || best;
@@ -321,6 +329,7 @@ async function previewPanel(modelId) {
 }
 async function updatePlan(selectedModelId=null,overrides={}) {
   if(!currentJob)return false;
+  if(!canReplan()){error('Sunlight files for this saved project are unavailable. Run a new search to re-plan.');return false;}
   if(planUpdateActive){
     // Serialize previews so rapid clicks finish with the last requested model.
     if(selectedModelId)pendingPanelModelId=selectedModelId;
@@ -439,10 +448,23 @@ async function loadHistory() {
 $('history').addEventListener('change',async()=>{
   const job=$('history').value; if(!job)return;
   try { const response=await fetch(`/api/jobs/${encodeURIComponent(job)}`); if(!response.ok)throw new Error('Saved analysis is unavailable.');
-    const state=await response.json(); render(state.result,job); toast('Saved search opened');
+    const state=await response.json(); restoreSearchInputs(state.result); render(state.result,job); busy(false); toast('Saved search opened');
   } catch(e){error(e.message);}
 });
 loadHistory();
+
+function restoreSearchInputs(result) {
+  const plan=result.proposal || {}, request=result.request, assumptions=result.assumptions || {};
+  $('address').value=request.address || ''; $('radius').value=request.radius_meters || 100; $('unit').value='meters';
+  $('budget').value=plan.budget_usd ?? 25000; $('energy-target').value=plan.energy_target_kwh_year ?? 10000;
+  $('budget-includes-installation').checked=plan.budget_includes_installation!==false;
+  $('space-limit').value=plan.space_limit_m2 ?? ''; $('space-unit').value='m2';
+  $('panel-priority').value=result.panel_recommendations?.priority || 'balanced';
+  $('usable').value=assumptions.usable_roof_fraction ?? .65;
+  $('density').value=assumptions.panel_kw_per_m2 ?? .2;
+  $('derate').value=plan.system_derate ?? assumptions.system_derate ?? .85;
+  $('api-key').value=''; renderBudgetScope();
+}
 
 function renderRoofSelection(result) {
   excludedRoofIds=new Set(result.roof_selection?.excluded_roof_ids || []);
@@ -452,7 +474,7 @@ function renderRoofSelection(result) {
   for(const [index,roof] of result.roofs.entries()){
     const p=roof.properties;
     const row=document.createElement('div');row.className='roof-selection-row';
-    const label=document.createElement('label');const input=document.createElement('input');input.type='checkbox';input.checked=!excludedRoofIds.has(p.id);input.id=`choose-roof-${index}`;input.dataset.roofId=p.id;input.disabled=planUpdateActive;
+    const label=document.createElement('label');const input=document.createElement('input');input.type='checkbox';input.checked=!excludedRoofIds.has(p.id);input.id=`choose-roof-${index}`;input.dataset.roofId=p.id;input.disabled=planUpdateActive || !canReplan();
     const text=document.createElement('span');const name=document.createElement('strong');name.textContent=roofLabel(p);
     const stats=document.createElement('small');stats.textContent=roofNote(`${format(p.area_m2)} m²`,`${format(p.annual_yield_kwh_per_kw)} kWh/kW/year`,addressNote(p));text.append(name,stats);label.append(input,text);row.append(label);
     input.addEventListener('change',()=>{
@@ -682,7 +704,7 @@ function renderTopPanels(data) {
     const actions=document.createElement('div');actions.className='top-panel-actions';
     const warrantyNote=document.createElement('p');warrantyNote.className='top-panel-warranty';warrantyNote.textContent=warranty;
     const buttons=document.createElement('div');buttons.className='top-panel-buttons';
-    const preview=document.createElement('button');preview.type='button';preview.className=selected?'secondary':'primary';preview.textContent=selected?'On map':'Preview';preview.disabled=selected;
+    const preview=document.createElement('button');preview.type='button';preview.className=selected?'secondary':'primary';preview.textContent=selected?'On map':'Preview';preview.disabled=selected || !canReplan();
     preview.setAttribute('aria-label',`${selected?'Shown on map':'Preview on map'}: ${panelName(model)}`);preview.addEventListener('click',()=>previewPanel(model.model_id));
     const specs=document.createElement('a');specs.className='text-link';specs.textContent='Specs ↗';specs.target='_blank';specs.rel='noopener noreferrer';setPanelLink(specs,model.specifications_source_url || model.price_source_url);
     buttons.append(preview,specs);actions.append(warrantyNote,buttons);
@@ -743,7 +765,7 @@ function renderQuickPanels(data) {
     const dimensions=document.createElement('p');dimensions.className='hint';dimensions.textContent=`${format(item.model.rated_power_w)} W · ${format(item.model.width_m,2)} × ${format(item.model.height_m,2)} m · ${format(item.panel_count)} panels`;
     const stats=document.createElement('p');stats.textContent=`${format(item.estimated_energy_kwh_year)} kWh/year · ${dollars(item.estimated_cost_usd)} installed`;
     const preview=document.createElement('button');preview.type='button';preview.className='secondary';preview.textContent='Preview on map';
-    preview.setAttribute('aria-label',`Preview ${fullPanelName(item.model)} on the map`);
+    preview.setAttribute('aria-label',`Preview ${fullPanelName(item.model)} on the map`);preview.disabled=!canReplan();
     preview.addEventListener('click',()=>previewPanel(item.model.model_id));
     card.append(title,dimensions,stats,preview);list.append(card);
   }

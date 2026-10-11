@@ -37,6 +37,30 @@ After a search, results are split into tabs under an address header (street, cit
 
 Other features: address suggestions as you type, recent searches as suggestions, saved searches that reopen after a restart (newest first, one per address and radius, with date), a loading screen with real progress stages, the search time in the header, and a multi-page **Download PDF** report.
 
+## Saved projects with MongoDB Atlas
+
+Add `MONGODB_URI` and `MONGODB_DATABASE=photogrid` to the ignored `.env` file,
+then restart PhotoGrid. Environment variables take precedence over `.env`.
+The Python requirements include PyMongo; your Atlas database user needs read/write
+access to the `photogrid` database, and your computer's IP must be in Atlas's access list.
+
+After a search, click **Save project**, enter a name, and click **Save to Atlas**.
+The **Saved projects** section on the Search tab shows named plans, models, costs,
+output and savings. **Open project** restores the saved settings and selected layout
+without calling Google. Every save creates a separate snapshot, so editing an opened
+plan does not overwrite a previous save. Apply settings and drawn zones before saving.
+
+MongoDB stores planning data and an imagery reference, not API keys or raster files.
+Keep the original search folder in `outputs/` to reopen the aerial image and re-plan.
+If files are missing, the project still opens its findings, roof outlines and panel
+layout; it explains the missing imagery and disables re-planning. A new search can
+restore those files. Projects are shared within this app's configured Atlas database;
+this demo has no user accounts. The list shows the newest 100 snapshots.
+
+Without Atlas configuration, or if Atlas is temporarily unavailable, local analysis,
+existing saved searches and PDF export still work. Connection failures are shown
+without credentials. See [MongoDB's connection guide](https://www.mongodb.com/docs/atlas/driver-connection/).
+
 ## How it works
 
 1. **Locate:** Google Geocoding resolves the address and checks it is in the lower 48 states or DC.

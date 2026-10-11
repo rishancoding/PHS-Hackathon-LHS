@@ -51,7 +51,9 @@
     },400);
   }
   input.addEventListener('input',schedule);
-  input.addEventListener('focus',()=>{render(recentMatches());if(input.value.trim().length>=3)schedule();});
+  // Reviewing a restored address should not start another billable lookup.
+  // Live suggestions begin when the user actually edits the address.
+  input.addEventListener('focus',()=>render(recentMatches()));
   input.addEventListener('blur',close);
   input.addEventListener('keydown',event=>{
     if(event.key==='Escape'){event.preventDefault();close();return;}

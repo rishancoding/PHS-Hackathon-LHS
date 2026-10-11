@@ -25,6 +25,12 @@ Your local `.env` stays ignored and is not uploaded. The Blueprint leaves
 key in the existing input; it is used for that request and excluded from saved
 results and reports. Do not put your personal key into the shared public demo.
 
+To enable saved projects on Render, set **MONGODB_URI** as a secret environment
+variable and **MONGODB_DATABASE** to `photogrid`, and allow the service's outbound
+IP addresses in Atlas. Keep the URI out of the Blueprint and Git. Atlas retains
+planning snapshots across redeploys; aerial files still depend on the service's
+file storage. This is a shared demo, so visitors can see the saved projects.
+
 This is a shared hackathon demo: saved searches and reports are accessible to
 other visitors. Use the sample area or public addresses. The page shows this
 notice when hosted. Free hosting has ephemeral files; saved imagery and searches

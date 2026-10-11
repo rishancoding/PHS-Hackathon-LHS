@@ -29,7 +29,7 @@ PhotoGrid shows what solar fits on every roof in a neighborhood, using real pane
 - Residential panels change the answer: with a $25,000 budget and 10,000 kWh target, the top three (Silfab, Aptos, REC) meet the target with about 16 panels at roughly $3.50/W installed; the old off-grid panels all fell short at about $4/W.
 - Sample area (synthetic, California prices): about $3,100 a year in bill savings, about an 8-year simple payback, about 6 t CO₂ avoided per year.
 - Existing-panel detection on 48 hand-labeled roofs from 7 sites: 73% correct (68% precision, 65% recall). Say the labels were made by eye.
-- 83 automated tests run offline; API keys are excluded from saved results, reports and logs; the local key lives in an ignored `.env` file.
+- 96 automated tests run offline; API keys are excluded from saved results, reports and logs; the local key lives in an ignored `.env` file.
 
 ## Three-minute demo script
 
@@ -39,7 +39,7 @@ PhotoGrid shows what solar fits on every roof in a neighborhood, using real pane
 4. **Panels (30 s):** scroll the cards; open **Compare two models** and point at the ✓ Better marks.
 5. **Cost & energy (20 s):** installation cost vs budget, then the Impact card: bill savings, payback, CO₂.
 6. **PDF (10 s):** **Download PDF**.
-7. **Close (15 s):** one honest limit (it doesn't detect rooftop equipment or slope, which is why zones exist), the accuracy number, and "runs locally; 83 offline tests".
+7. **Close (15 s):** one honest limit (it doesn't detect rooftop equipment or slope, which is why zones exist), the accuracy number, and "runs locally; 96 offline tests".
 
 Show a shortfall case on purpose if time allows: lower the budget on the Search tab and click **Update plan**.
 

@@ -13,6 +13,7 @@
   <script src="/static/loading.js" defer></script>
   <script src="/static/app.js" defer></script>
   <script src="/static/address.js" defer></script>
+  <script src="/static/projects.js" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -33,7 +34,7 @@
         <div id="result-content" hidden>
           <div class="result-heading">
             <div><span id="source-badge" class="sample-badge" hidden>Sample data</span><h1 id="result-address"></h1><ul id="search-summary" class="search-chips" aria-label="Search settings"></ul></div>
-            <div class="result-actions"><a id="pdf-export" class="primary report-download">Download PDF ↓</a></div>
+            <div class="result-actions"><button id="save-project-shortcut" class="secondary" type="button">Save project</button><a id="pdf-export" class="primary report-download">Download PDF ↓</a></div>
           </div>
           <div class="summary-metrics" aria-label="Selected layout summary">
             <div><svg class="tile-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg><span>System size</span><strong id="system-capacity">—</strong><small id="capacity-note"></small></div>
@@ -53,6 +54,7 @@
             <details id="map-section" class="card map-card" open>
               <summary class="roof-section-summary">Layout</summary>
               <div class="map-toolbar"><label class="toggle"><input id="heat-toggle" type="checkbox"> Show sunlight</label><div><button id="draw-zone" type="button" aria-pressed="false" aria-describedby="zone-help">Draw no-panel zone</button><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="reset-map" type="button">Reset view</button></div></div>
+              <p id="map-assets-notice" class="hint map-assets-notice" role="status" hidden></p>
               <div class="map-wrap"><svg id="roof-map" role="img" aria-label="Aerial image and selectable candidate roof outlines" preserveAspectRatio="xMidYMid meet"><title>Candidate roof map</title><image id="aerial"/><image id="sunlight" visibility="hidden"/><g id="outlines"></g><g id="existing-panels"></g><g id="proposed-panels"></g><g id="blocked-zones"></g><g id="center-marker"><circle r="5" fill="#fff" stroke="#183f32" stroke-width="2"/><circle r="1.5" fill="#183f32"/></g></svg></div>
               <div class="map-footer"><span class="map-legend"><i class="roof-key"></i> Roofs <i class="panel-key"></i> New panels <i class="existing-key"></i> Existing panels <i class="zone-key"></i> No-panel zones</span><span><span id="imagery-source">Imagery © Google</span> <span id="imagery-date"></span></span></div>
               <div id="zone-panel" class="zone-panel" hidden>
@@ -91,7 +93,15 @@
           <button id="replan" class="secondary replan-button" type="button" hidden>Update plan with these settings</button>
         </form>
         <div class="demo"><button id="demo-button" type="button" class="secondary">Try the sample area</button></div>
-        <div id="history-wrap" hidden><label for="history">Saved searches</label><select id="history"><option value="">Open a saved search</option></select></div>
+        <div id="history-wrap" hidden><label for="history">Recent analyses on this device</label><select id="history"><option value="">Open a saved search</option></select></div>
+        <details id="saved-projects" class="saved-projects" open>
+          <summary>Saved projects</summary>
+          <p class="hint">Save a named snapshot of the plan currently shown. Apply any settings or zone changes first.</p>
+          {% if hosted %}<p class="hint">Projects in this shared demo are visible to other visitors.</p>{% endif %}
+          <form id="project-save-form"><label for="project-name">Project name</label><input id="project-name" type="text" maxlength="80" required placeholder="e.g. School rooftop"><button id="project-save" class="secondary" type="submit" disabled>Save to Atlas</button></form>
+          <div class="projects-heading"><span id="projects-status" class="hint" role="status" aria-live="polite">Checking saved projects…</span><button id="projects-refresh" class="text-button" type="button">Refresh</button></div>
+          <ul id="project-list" class="project-list" aria-label="Saved solar projects"></ul>
+        </details>
       </div></details>
       <section class="results" aria-label="Solar recommendations and findings">
         <div id="result-details" hidden>
