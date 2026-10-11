@@ -23,21 +23,29 @@ MIN_TEXTURE = 12  # module grid lines; shadows and plain surfaces are smooth
 TEXTURE_MAX_RESOLUTION_M = 0.15
 
 
-def detect_existing_panels(rgb, roof_labels, resolution):
-    """Return [(pixel_polygon, roof_label, area_m2)] for possible existing panel areas."""
+def detect_existing_panels(rgb, roof_labels, resolution, resampled=False):
+    """Return [(pixel_polygon, roof_label, area_m2)] for possible existing panel areas.
+
+    `resampled` means the photo was shrunk from finer source pixels (a memory-capped grid):
+    smoothing fades the module grid lines the texture check needs, so it is skipped, as it is
+    for coarse imagery.
+    """
     if not np.isfinite(rgb).any():
         return []
     red, green, blue = (np.nan_to_num(band) for band in rgb)
     brightness = (red + green + blue) / 3
     window = max(3, round(1.0 / resolution))
     # Judge ~1 m neighborhoods, not single pixels, so module frames don't break up arrays.
+    local_brightness = ndimage.uniform_filter(brightness, window)
     candidate = (
         (roof_labels > 0)
         & (ndimage.uniform_filter(blue - red, window) >= MIN_BLUE_MINUS_RED)
         & (ndimage.uniform_filter(blue - green, window) >= MIN_BLUE_MINUS_GREEN)
-        & (ndimage.uniform_filter(brightness, window) >= MIN_BRIGHTNESS)
-        & (ndimage.uniform_filter(brightness, window) <= MAX_BRIGHTNESS)
+        & (local_brightness >= MIN_BRIGHTNESS)
+        & (local_brightness <= MAX_BRIGHTNESS)
     )
+    if not candidate.any():
+        return []  # Most areas have none; skip the whole-image cleanup below.
     candidate = ndimage.binary_opening(candidate, np.ones((window, window)))
     candidate = ndimage.binary_closing(candidate, np.ones((max(3, window // 2),) * 2))
     if not candidate.any():
@@ -58,7 +66,7 @@ def detect_existing_panels(rgb, roof_labels, resolution):
             continue
         box = boxes[int(value) - 1]
         inside = labels[box] == int(value)
-        if resolution <= TEXTURE_MAX_RESOLUTION_M and texture[box][inside].mean() < MIN_TEXTURE:
+        if not resampled and resolution <= TEXTURE_MAX_RESOLUTION_M and texture[box][inside].mean() < MIN_TEXTURE:
             continue
         roofs = roof_labels[box][inside]
         roof_label = int(np.bincount(roofs[roofs > 0]).argmax())

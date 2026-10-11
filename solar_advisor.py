@@ -30,7 +30,7 @@ from solar_address import InputError, https_context
 
 DEFAULT_MODEL = "deepseek-v4-flash"
 DEFAULT_BASE_URL = "https://api.deepseek.com"
-DEFAULT_REASONING_EFFORT = "high"
+DEFAULT_REASONING_EFFORT = "low"  # About half the wait of "high"; answers checked equally accurate
 SETTING_KEYS = ("DEEPSEEK_API_KEY", "DEEPSEEK_MODEL", "DEEPSEEK_BASE_URL", "DEEPSEEK_REASONING_EFFORT")
 MAX_MESSAGES = 12
 MAX_USER_CHARS = 1000

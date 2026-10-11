@@ -106,13 +106,20 @@ def download_layers(data, api_key, directory, progress=lambda message: None):
 
 
 def aligned_band(path, band, grid, categorical=False):
-    """Reproject each source into the same meter-based grid, preserving missing data."""
-    destination = np.full((grid["height"], grid["width"]), np.nan, dtype=np.float32)
+    """Reproject each source into the same meter-based grid, preserving missing data.
+
+    `band` may be a list: one warp of several bands (the RGB photo) gives the same pixels
+    as separate warps and shares the coordinate work, which is most of the alignment time.
+    """
+    bands = band if isinstance(band, list) else [band]
+    shape = (grid["height"], grid["width"])
+    destination = np.full((len(bands), *shape) if isinstance(band, list) else shape, np.nan, dtype=np.float32)
+    band = bands[0]
     with rasterio.open(path) as source:
-        if source.crs is None or band > source.count:
+        if source.crs is None or max(bands) > source.count:
             raise InputError(f"Invalid raster metadata or missing band in {Path(path).name}.")
         reproject(
-            source=rasterio.band(source, band),
+            source=rasterio.band(source, bands if destination.ndim == 3 else band),
             destination=destination,
             src_transform=source.transform,
             src_crs=source.crs,
@@ -171,7 +178,7 @@ def process_layers(
     roof_mask = aligned_band(paths["mask"], 1, grid, categorical=True)
     annual = aligned_band(paths["annual_flux"], 1, grid)
     dsm = aligned_band(paths["dsm"], 1, grid)
-    rgb = np.stack([aligned_band(paths["rgb"], band, grid) for band in (1, 2, 3)])
+    rgb = aligned_band(paths["rgb"], [1, 2, 3], grid)
     valid_flux = np.isfinite(annual) & (annual >= 0)
     row, col = np.ogrid[: grid["height"], : grid["width"]]
     pixel_x = grid["transform"].c + (col + 0.5) * grid["resolution"]
@@ -266,7 +273,9 @@ def process_layers(
 
     existing_area = {roof["properties"]["id"]: 0.0 for roof in roofs}
     existing_panels = []
-    for polygon, label, area in detect_existing_panels(rgb, filtered, grid["resolution"]):
+    # A memory-capped grid is coarser than Google's pixels, which blurs module grid lines.
+    resampled = grid["resolution"] > request["solar_parameters"]["pixelSizeMeters"] * 1.01
+    for polygon, label, area in detect_existing_panels(rgb, filtered, grid["resolution"], resampled):
         roof_id = f"roof-{label}"
         if roof_id not in existing_area:
             continue
@@ -297,7 +306,8 @@ def process_layers(
     heat = np.stack([255 * normalized, 90 + 140 * normalized, 160 * (1 - normalized), sunlight * 180], axis=-1).astype(
         np.uint8
     )
-    Image.fromarray(heat).save(directory / "sunlight.webp", quality=80, method=4)
+    # method=2 encodes about 3x faster than the default 4 at the same file size.
+    Image.fromarray(heat).save(directory / "sunlight.webp", quality=80, method=2)
     for name, data in (
         ("roof_mask", np.where(circle_pixels, roof_mask, np.nan)),
         ("annual_flux", np.where(circle_pixels, annual, np.nan)),

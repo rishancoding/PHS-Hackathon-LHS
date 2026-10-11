@@ -54,7 +54,9 @@ service's Events page) restarts the service, which clears every search and cuts
 off requests in progress, including advisor answers. `render.yaml` therefore caps
 the analysis grid at 1,400 pixels per side (`PHOTOGRID_MAX_GRID_PIXELS`; 0.14 m
 pixels for a 100 m search instead of 0.1 m), which roughly halves a search's peak
-memory, and limits GDAL's cache, OpenBLAS threads and malloc arenas, which
+memory. Shrinking the photo blurs the module lines the existing-panel texture
+check looks for, so on a capped grid that check is skipped and detection uses
+color and shape, as for large searches. It also limits GDAL's cache, OpenBLAS threads and malloc arenas, which
 otherwise size themselves for the host machine. Run one search at a time, since
 simultaneous searches and PDF downloads add up. A paid instance with more memory
 can raise or remove the cap.
