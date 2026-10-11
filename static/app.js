@@ -54,8 +54,8 @@ function setDrawMode(on) {
   renderZones();
 }
 async function analyze(demo=false) {
-  window.roofreadyAddress?.close();
-  window.roofreadyLoading.start(demo ? 'Synthetic roofs and sunlight data' : $('address').value.trim(),demo);
+  window.photogridAddress?.close();
+  window.photogridLoading.start(demo ? 'Synthetic roofs and sunlight data' : $('address').value.trim(),demo);
   $('error').hidden=true; busy(true);
   toast(demo ? 'Preparing the sample area…' : 'Starting your search…',true);
   const newSearchInputs={...planInputs(), excluded_roof_ids:[], blocked_zones:[]};
@@ -71,7 +71,7 @@ async function analyze(demo=false) {
     currentJob=data.job_id;
     await poll(currentJob);
   } catch(e) { error(e.message); }
-  finally { busy(false);window.roofreadyLoading.finish(); }
+  finally { busy(false);window.photogridLoading.finish(); }
 }
 // Status checks ride out brief network blips (three retries with backoff) before giving up.
 async function jobStatus(job){
@@ -86,7 +86,7 @@ async function jobStatus(job){
 }
 async function poll(job,preserveView=false) {
   while(true) {
-    const state=await jobStatus(job); window.roofreadyLoading.update(state.message);
+    const state=await jobStatus(job); window.photogridLoading.update(state.message);
     if(state.status==='failed') throw new Error(state.message);
     if(state.status==='complete') { render(state.result,job,preserveView); toast(''); await loadHistory(); return; }
     await new Promise(resolve=>setTimeout(resolve,400));
@@ -429,7 +429,7 @@ async function loadHistory() {
   try {
     const response=await fetch('/api/history'); if(!response.ok)return;
     const runs=await response.json();
-    window.roofreadyAddress?.setRecent(runs.filter(run=>!run.demo).map(run=>run.address));
+    window.photogridAddress?.setRecent(runs.filter(run=>!run.demo).map(run=>run.address));
     $('history').replaceChildren(new Option('Choose an analysis',''));
     const when=value=>value ? new Date(value).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
     for(const run of runs) $('history').append(new Option([run.demo?'Sample area':run.address,run.radius_meters?`${format(run.radius_meters)} m`:'',when(run.completed_at)].filter(Boolean).join(' · '),run.job_id));

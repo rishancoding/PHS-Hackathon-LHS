@@ -109,7 +109,7 @@ class AddressRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()['suggestions'][0]['source'], 'google')
         predict.assert_called_once_with('Main', 'test-key')
         self.assertNotIn('test-key', response.get_data(as_text=True))
-        for asset in ('roofready-mark.svg', 'address.js', 'loading.js'):
+        for asset in ('photogrid-mark.svg', 'address.js', 'loading.js'):
             response = self.client.get('/static/' + asset)
             self.assertEqual(response.status_code, 200)
             response.close()

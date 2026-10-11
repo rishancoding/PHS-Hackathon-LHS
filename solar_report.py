@@ -108,7 +108,7 @@ class PDFPages:
         self.draw = ImageDraw.Draw(self.image)
         self.pages.append(self.image)
         self.draw.rectangle((0, 0, self.width, 12), fill='#246b60')
-        self.draw.text((self.margin, 30), 'RoofReady  /  Solar planning report', font=font(23, True), fill='#315e82')
+        self.draw.text((self.margin, 30), 'PhotoGrid  /  Solar planning report', font=font(23, True), fill='#315e82')
         self.y = 100
 
     def text(self, text, size=25, bold=False, color='#203542'):
@@ -176,8 +176,8 @@ class PDFPages:
             save_all=True,
             append_images=self.pages[1:],
             resolution=150,
-            title='RoofReady Solar Planning Report',
-            author='RoofReady',
+            title='PhotoGrid Solar Planning Report',
+            author='PhotoGrid',
         )
         output.seek(0)
         return output

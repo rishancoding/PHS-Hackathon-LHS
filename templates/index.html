@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RoofReady · Solar planning</title>
+  <title>PhotoGrid · Solar planning</title>
+  <meta name="description" content="PhotoGrid compares real solar panels and plots layouts for your budget, roof space and energy needs.">
   <meta name="theme-color" content="#203542">
-  <link rel="icon" href="/static/roofready-mark.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/photogrid-mark.svg" type="image/svg+xml">
   <!-- Inter for clearer numbers and labels; falls back to the system font offline. -->
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
@@ -15,11 +16,12 @@
 </head>
 <body>
   <header class="site-header">
-    <a class="brand" href="/" aria-label="RoofReady home"><img src="/static/roofready-mark.svg" width="34" height="34" alt=""><span>RoofReady</span></a>
+    <a class="brand" href="/photogrid" aria-label="PhotoGrid home"><img src="/static/photogrid-mark.svg" width="34" height="34" alt=""><span>PhotoGrid</span></a>
     <span id="search-time" class="header-note" role="status" hidden></span>
   </header>
   <main>
     <section id="intro" class="intro"><h1>Plan solar for your area</h1><p>Enter an address, a budget and your yearly energy need.</p></section>
+    {% if hosted %}<p class="hint">Shared hackathon demo: use the sample area or public addresses. Saved searches are visible to other visitors and may reset.</p>{% endif %}
     <div class="workspace">
       <section class="results" aria-label="Analysis map and selected panel">
         <p id="status" class="toast" role="status" aria-live="polite"></p>
@@ -145,9 +147,9 @@
       </section>
     </div>
   </main>
-  <footer>RoofReady · Solar estimates for planning. Verify your layout with an installer.</footer>
+  <footer>PhotoGrid · Solar estimates for planning. Verify your layout with an installer.</footer>
   <div id="loading-screen" class="loading-screen" role="dialog" aria-modal="true" aria-labelledby="loading-title" aria-describedby="loading-message" tabindex="-1" hidden>
-    <div class="loading-card"><div class="loading-brand"><img src="/static/roofready-mark.svg" width="48" height="48" alt=""><span>RoofReady</span></div>
+    <div class="loading-card"><div class="loading-brand"><img src="/static/photogrid-mark.svg" width="48" height="48" alt=""><span>PhotoGrid</span></div>
       <div class="loading-track" aria-hidden="true"><span></span></div>
       <h2 id="loading-title">Checking your search area</h2><p id="loading-area"></p><p id="loading-message" role="status" aria-live="polite">Preparing your analysis…</p>
       <ol id="loading-steps"><li data-stage="0">Locate the address</li><li data-stage="1">Load aerial and sunlight data</li><li data-stage="2">Find candidate roofs</li><li data-stage="3">Compare panels and layouts</li></ol>

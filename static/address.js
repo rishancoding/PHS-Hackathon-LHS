@@ -62,5 +62,5 @@
     else if(event.key==='Tab')close();
   });
   document.getElementById('api-key').addEventListener('change',()=>{if(document.activeElement===input)schedule();});
-  window.roofreadyAddress={close,setRecent(addresses){recent=[...new Set(addresses)];}};
+  window.photogridAddress={close,setRecent(addresses){recent=[...new Set(addresses)];}};
 })();

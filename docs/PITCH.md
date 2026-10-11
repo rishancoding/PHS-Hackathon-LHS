@@ -1,18 +1,18 @@
-# RoofReady pitch and demo plan
+# PhotoGrid pitch and demo plan
 
 ## One-line pitch
 
-RoofReady shows what solar fits on every roof in a neighborhood, using real panels you can buy, within your budget, and what it would save, in under a minute.
+PhotoGrid shows what solar fits on every roof in a neighborhood, using real panels you can buy, within your budget, and what it would save, in under a minute.
 
 ## Why it matters
 
 - Most homeowners never get past "is my roof any good for solar?" Quotes take days and cover one house.
-- RoofReady answers it for a whole area at once: every roof, existing panels, a real layout, cost, savings and CO₂.
+- PhotoGrid answers it for a whole area at once: every roof, existing panels, a real layout, cost, savings and CO₂.
 - Average U.S. home: about 10,400 kWh a year (EIA). The default 10,000 kWh target is roughly one home.
 
 ## How it differs from Google Project Sunroof
 
-| | Project Sunroof | RoofReady |
+| | Project Sunroof | PhotoGrid |
 | --- | --- | --- |
 | Scope | One building | Every roof in a radius up to 1 km |
 | Panels | Generic | 14 real catalog models with datasheets and prices |
@@ -29,7 +29,7 @@ RoofReady shows what solar fits on every roof in a neighborhood, using real pane
 - Residential panels change the answer: with a $25,000 budget and 10,000 kWh target, the top three (Silfab, Aptos, REC) meet the target with about 16 panels at roughly $3.50/W installed; the old off-grid panels all fell short at about $4/W.
 - Sample area (synthetic, California prices): about $3,100 a year in bill savings, about an 8-year simple payback, about 6 t CO₂ avoided per year.
 - Existing-panel detection on 48 hand-labeled roofs from 7 sites: 73% correct (68% precision, 65% recall). Say the labels were made by eye.
-- 79 automated tests run offline in about 3 seconds; API keys are never written to disk or logs.
+- 83 automated tests run offline; API keys are excluded from saved results, reports and logs; the local key lives in an ignored `.env` file.
 
 ## Three-minute demo script
 
@@ -39,7 +39,7 @@ RoofReady shows what solar fits on every roof in a neighborhood, using real pane
 4. **Panels (30 s):** scroll the cards; open **Compare two models** and point at the ✓ Better marks.
 5. **Cost & energy (20 s):** installation cost vs budget, then the Impact card: bill savings, payback, CO₂.
 6. **PDF (10 s):** **Download PDF**.
-7. **Close (15 s):** one honest limit (it doesn't detect rooftop equipment or slope, which is why zones exist), the accuracy number, and "runs locally; 79 offline tests".
+7. **Close (15 s):** one honest limit (it doesn't detect rooftop equipment or slope, which is why zones exist), the accuracy number, and "runs locally; 83 offline tests".
 
 Show a shortfall case on purpose if time allows: lower the budget on the Search tab and click **Update plan**.
 
@@ -56,7 +56,7 @@ Show a shortfall case on purpose if time allows: lower the budget on the Search 
 - *Why not machine learning?* We needed something explainable and measurable in a weekend; we measured it (73%) and know where it fails. A trained model is the next step.
 - *Where do the numbers come from?* Every source is listed on the Cost & energy tab under Methods & assumptions.
 - *Does it cost money?* Each live search costs a few Google API calls; repeat searches reuse saved imagery.
-- *Is my data safe?* It runs on this laptop; nothing leaves except the Google requests, and the key is never saved.
+- *Is my data safe?* It runs on this laptop; nothing leaves except the Google requests, and the key is excluded from saved results and reports.
 
 ## Night-before checklist
 

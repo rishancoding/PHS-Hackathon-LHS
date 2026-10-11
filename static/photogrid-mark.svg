@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">PhotoGrid</title>
+  <desc id="desc">A blue solar grid with a golden sun</desc>
+  <circle cx="48" cy="15" r="8" fill="#d78039"/>
+  <path d="M48 3V1m0 28v-2M36 15h-2m28 0h-2M39.5 6.5 38 5m20 20-1.5-1.5M39.5 23.5 38 25M58 5l-1.5 1.5" fill="none" stroke="#d78039" stroke-width="2" stroke-linecap="round"/>
+  <rect x="7" y="23" width="46" height="34" rx="5" fill="#203542"/>
+  <rect x="11" y="27" width="38" height="26" rx="2" fill="#39738b"/>
+  <path d="M23.7 27v26m12.6-26v26M11 40h38" fill="none" stroke="#dce9ec" stroke-width="1.5"/>
+</svg>

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```sh
 python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt   # setup
-.venv/bin/python roofready_app.py                 # dashboard at http://127.0.0.1:5001 (--port to change)
+.venv/bin/python roofready_app.py                 # PhotoGrid at http://127.0.0.1:5001/photogrid (--port to change)
 .venv/bin/python -m unittest -v                   # all tests (offline; no API key needed)
 .venv/bin/python -m unittest -v test_panel_plan   # one test module
 .venv/bin/python -m unittest test_panel_plan.SomeTestCase.test_name   # one test
@@ -31,6 +31,6 @@ Pipeline, in dependency order:
 The central data structure is the `result` dict. Each stage mutates it in place and it is persisted as `outputs/<job_id>/results.json`. When you add fields, account for older saved analyses: on startup the app reloads every folder in `outputs/` that contains `results.json`.
 
 **`roofready_app.py`** uses a `create_app(output_root)` factory, which tests call with a temp directory. Jobs live in an in-memory dict guarded by a `Lock`. A single-worker `ThreadPoolExecutor` enforces one running analysis at a time, and the frontend polls `/api/jobs/<id>`. Replanning (`/api/plan`), roof-address lookup, and PDF export reuse saved results without new Solar requests. Security invariants to preserve:
-- POST requests must carry a same-origin `Origin` header, and `TRUSTED_HOSTS` is limited to localhost.
+- POST requests must carry a same-origin `Origin` header. `TRUSTED_HOSTS` accepts localhost and, when deployed, the exact `RENDER_EXTERNAL_HOSTNAME`. Only Render mode trusts one forwarded scheme header; forwarded host headers remain untrusted. See `docs/DEPLOYMENT.md` and `render.yaml` for the shared demo setup.
 - API keys are passed only as worker arguments. They are never stored in job state, results, or output files.
 - `/results/<job>/<file>` serves only an allowlist of filenames.

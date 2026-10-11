@@ -1,10 +1,16 @@
-# RoofReady
+# PhotoGrid
 
 **See what solar fits on every roof in a neighborhood, within your budget, in under a minute.**
 
-Enter a U.S. address, a search radius, a budget and how much electricity you need. RoofReady pulls Google's aerial imagery and sunlight data for the whole circle, finds every roof, flags panels that are already installed, and lays out real, purchasable solar panels on the sunniest open roof space. It compares 14 rooftop panel models from a sourced catalog, shows the installation cost, bill savings, payback and CO₂ avoided, and exports a PDF report. It runs entirely on your own computer; your Google key is never stored.
+Enter a U.S. address, a search radius, a budget and how much electricity you need. PhotoGrid pulls Google's aerial imagery and sunlight data for the whole circle, finds every roof, flags panels that are already installed, and lays out real, purchasable solar panels on the sunniest open roof space. It compares 14 rooftop panel models from a sourced catalog, shows the installation cost, bill savings, payback and CO₂ avoided, and exports a PDF report. Run it locally or deploy the shared hackathon demo. Your local Google key stays in the ignored `.env` file and is never included in Git, saved searches or reports.
 
-![RoofReady results for the sample area](docs/screenshot.png)
+![PhotoGrid results for the sample area](docs/screenshot.png)
+
+[Deploy PhotoGrid on Render](https://render.com/deploy?repo=https://github.com/rishancoding/PHS-Hackathon-LHS) · [Public website setup](docs/DEPLOYMENT.md)
+
+The public website is not deployed yet. The included `render.yaml` names the
+service `photogrid`; Render assigns its final URL after you connect your account.
+The shared hosted demo starts without a Google key and supports the sample area.
 
 ## Quick start
 
@@ -15,7 +21,7 @@ cp .env.example .env            # then put your key in .env: GOOGLE_MAPS_API_KEY
 .venv/bin/python roofready_app.py
 ```
 
-Open **http://127.0.0.1:5001**. Click **Try the sample area** to explore with clearly labeled synthetic data and no Google requests, or enter an address and click **Find roofs and panels**.
+Open **http://127.0.0.1:5001/photogrid** (the original `/` address also works). Click **Try the sample area** to explore with clearly labeled synthetic data and no Google requests, or enter an address and click **Find roofs and panels**.
 
 Requirements: Python 3.10 or newer, and a Google Cloud key with the **Geocoding**, **Solar** and **Places (New)** APIs enabled. Google Maps Platform is billed per request; restrict the key to those three APIs and set a daily quota and budget alert in Google Cloud. To use another port: `.venv/bin/python roofready_app.py --port 5002`. Stop the server with Control+C.
 
@@ -34,7 +40,7 @@ Other features: address suggestions as you type, recent searches as suggestions,
 ## How it works
 
 1. **Locate:** Google Geocoding resolves the address and checks it is in the lower 48 states or DC.
-2. **Download:** the Google Solar API returns four layers for the circle: aerial imagery, a rooftop mask, yearly sunlight (kWh/kW/year) and elevation. If Google has no high-quality imagery for the area, RoofReady retries once with medium quality and says so under the map. A repeat search of the same center and radius reuses the saved layers, so it takes about 3 seconds instead of about 40.
+2. **Download:** the Google Solar API returns four layers for the circle: aerial imagery, a rooftop mask, yearly sunlight (kWh/kW/year) and elevation. If Google has no high-quality imagery for the area, PhotoGrid retries once with medium quality and says so under the map. A repeat search of the same center and radius reuses the saved layers, so it takes about 3 seconds instead of about 40.
 3. **Find roofs:** the layers are aligned on a local meter grid and clipped to the circle; connected regions of Google's rooftop mask become candidate roofs (10 m² minimum), ranked by theoretical potential.
 4. **Flag existing panels:** a color-and-texture check marks slate-blue, panel-shaped areas on roofs so new panels avoid them.
 5. **Place panels:** for each of the 14 rooftop models, the planner fills the sunniest roofs first. On each roof it aligns a grid with the building, tries both module orientations with 0.2 m gaps, keeps panels fully inside the outline and away from flagged and blocked areas, and fills the sunniest spots first using the per-pixel sunlight. It stops at your energy target, budget, panel-area cap or the available space.
@@ -56,7 +62,7 @@ Timing: a first live search takes about 40 seconds, about 93% of it downloading 
 
 ## Data, privacy and saved searches
 
-The server runs only on localhost and rejects requests from other sites. API keys are used only for the request that needs them and never written to job state, results or logs (unexpected errors are logged to the terminal with the key removed). Searches are saved under `outputs/` (ignored by Git) with the downloaded layers, so they reopen and re-plan without new requests. **Reuse saved imagery** (under Assumptions, on by default) can be turned off for a fresh download; check Google's terms on how long imagery may be kept. Deleting a folder in `outputs/` removes that saved search.
+The local server accepts only localhost and rejects POST requests from other sites. The optional Render deployment accepts its assigned hostname and retains the same-origin requirement. API keys are used only for the request that needs them and never written to job state, results or logs (unexpected errors are logged to the terminal with the key removed). Searches are saved under `outputs/` (ignored by Git) with the downloaded layers, so they reopen and re-plan without new requests. **Reuse saved imagery** (under Assumptions, on by default) can be turned off for a fresh download; check Google's terms on how long imagery may be kept. Deleting a folder in `outputs/` removes that saved search.
 
 ## Development
 

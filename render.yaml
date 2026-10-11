@@ -1,0 +1,18 @@
+# Deploy from main as a Render Blueprint. No local API key is uploaded.
+services:
+  - type: web
+    name: photogrid
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements-hosted.txt
+    # Job state is in memory: one worker, with threads for polling while working.
+    startCommand: gunicorn 'roofready_app:create_app()' --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 180
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.12
+      - key: PHOTOGRID_OUTPUT_ROOT
+        value: /tmp/photogrid-outputs
+      - key: GOOGLE_MAPS_API_KEY
+        value: ""

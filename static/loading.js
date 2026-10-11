@@ -20,7 +20,7 @@
       if(i===stage)element.setAttribute('aria-current','step');else element.removeAttribute('aria-current');
     });
   }
-  window.roofreadyLoading={
+  window.photogridLoading={
     start(area,demo=false){
       clearInterval(timer);started=Date.now();stage=0;returnFocus=document.activeElement;
       document.getElementById('loading-title').textContent=demo ? 'Building the sample area' : 'Checking your search area';

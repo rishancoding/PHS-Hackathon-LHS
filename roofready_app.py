@@ -1,4 +1,4 @@
-"""Local RoofReady dashboard. Run with .venv/bin/python roofready_app.py."""
+"""Local PhotoGrid dashboard. Run with .venv/bin/python roofready_app.py."""
 
 import argparse
 from copy import deepcopy
@@ -13,6 +13,7 @@ import time
 import traceback
 
 from flask import Flask, abort, jsonify, render_template, request, send_from_directory, send_file
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from address_autocomplete import address_predictions
 from demo_roofready import run_demo
@@ -33,8 +34,15 @@ def resolve_key(supplied=""):
 
 def create_app(output_root=None):
     app = Flask(__name__)
-    app.config.update(MAX_CONTENT_LENGTH=16384, TRUSTED_HOSTS=["localhost", "127.0.0.1"])
-    output_root = Path(output_root or ROOT / "outputs")
+    render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "").strip()
+    trusted_hosts = ["localhost", "127.0.0.1"]
+    if render_host:
+        trusted_hosts.append(render_host)
+        # Render terminates HTTPS before forwarding to Gunicorn. Trust its one
+        # scheme header; keep host validation and the same-origin POST check.
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=1, x_host=0, x_port=0, x_prefix=0)
+    app.config.update(MAX_CONTENT_LENGTH=16384, TRUSTED_HOSTS=trusted_hosts)
+    output_root = Path(output_root or os.environ.get("PHOTOGRID_OUTPUT_ROOT") or ROOT / "outputs")
     jobs = {}
     lock = Lock()
     executor = ThreadPoolExecutor(max_workers=1)
@@ -75,9 +83,14 @@ def create_app(output_root=None):
             abort(403)
 
     @app.get("/")
+    @app.get("/photogrid")
     def index():
         key = resolve_key()
-        return render_template("index.html", configured=bool(key))
+        return render_template("index.html", configured=bool(key), hosted=bool(render_host))
+
+    @app.get("/health")
+    def health():
+        return jsonify(status="ok", app="PhotoGrid")
 
     @app.post("/api/address-suggestions")
     def suggest_addresses():
@@ -266,7 +279,7 @@ def create_app(output_root=None):
         except InputError as exc:
             return jsonify(error=str(exc)), 400
         return send_file(
-            output, mimetype="application/pdf", as_attachment=True, download_name=f"roofready-{job_id}.pdf", max_age=0
+            output, mimetype="application/pdf", as_attachment=True, download_name=f"photogrid-{job_id}.pdf", max_age=0
         )
 
     @app.post("/api/addresses/<job_id>")
