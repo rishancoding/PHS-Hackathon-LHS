@@ -6,6 +6,7 @@ structured site data, and "what if" questions rerun the real planner on a copy o
 
 from collections import deque
 from copy import deepcopy
+from http.client import HTTPException
 import json
 import os
 from threading import Lock
@@ -404,7 +405,7 @@ def post_json(url, payload, api_key, timeout=60):
     except HTTPError as exc:
         message = UPSTREAM_ERRORS.get(exc.code, "DeepSeek is temporarily unavailable. Try again shortly.")
         raise AdvisorError(message) from None
-    except (URLError, TimeoutError, OSError):
+    except (URLError, TimeoutError, OSError, HTTPException):  # HTTPException: connection dropped mid-reply
         raise AdvisorError("Could not reach DeepSeek. Check the connection and try again.") from None
     except ValueError:
         raise AdvisorError("DeepSeek returned an invalid response.") from None

@@ -93,6 +93,12 @@
     }
     input.disabled=!configured;controls();
   }
+  // Host error pages (restarts, timeouts) carry no JSON reason, so explain the status instead.
+  function failure(status){
+    if(status===404)return 'This search is no longer on the server, usually because the site restarted. Run the search again, then ask.';
+    if(status>=502)return 'The server is restarting or overloaded. Wait a minute, run the search again, then ask.';
+    return `The advisor hit a server error (HTTP ${status}). Try again.`;
+  }
   // Newest messages first, within the server's message count and request-size limits.
   function trimmed(){
     let messages=history.slice(-MAX_HISTORY).map(m=>({role:m.role,content:m.role==='assistant' ? m.content.slice(0,MAX_ASSISTANT_CHARS) : m.content}));
@@ -112,7 +118,7 @@
     try{
       const response=await fetch(`/api/advisor/${encodeURIComponent(askedJob)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:trimmed()}),signal:controller.signal});
       const data=await response.json().catch(()=>({}));
-      if(!response.ok)throw new Error(data.error || 'The advisor could not answer. Try again.');
+      if(!response.ok)throw new Error(data.error || failure(response.status));
       if(askedJob!==job)return;
       history.push({role:'assistant',content:data.reply});
       bubble('assistant',data.reply,data.scenarios || []);

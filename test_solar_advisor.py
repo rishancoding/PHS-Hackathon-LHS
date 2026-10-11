@@ -7,6 +7,7 @@ import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
+from http.client import HTTPException
 from urllib.error import HTTPError
 
 from demo_roofready import run_demo
@@ -185,13 +186,35 @@ class AdvisorTests(unittest.TestCase):
         ):
             self.assertEqual(self.ask(client, messages).status_code, 400, messages[:1])
         self.assertEqual(client.post(f"/api/advisor/{self.job}", data="nope", headers=self.origin).status_code, 400)
-        self.assertEqual(self.ask(client, [{"role": "user", "content": "Hi"}], job="c" * 24).status_code, 404)
+        # A restarted host forgets searches; the chat needs a readable reason, not an HTML page.
+        missing = self.ask(client, [{"role": "user", "content": "Hi"}], job="c" * 24)
+        self.assertEqual(missing.status_code, 404)
+        self.assertIn("Run the search again", missing.get_json()["error"])
         cross_site = client.post(
             f"/api/advisor/{self.job}",
             json={"messages": [{"role": "user", "content": "Hi"}]},
             headers={"Origin": "https://example.com"},
         )
         self.assertEqual(cross_site.status_code, 403)
+
+    def test_unexpected_errors_return_json(self):
+        def broken(*args):
+            raise RuntimeError(f"bug with {KEY}")
+
+        with self.assertLogs("roofready_app", level="ERROR"):
+            response = self.ask(self.client(SolarAdvisor(KEY, transport=broken)), [{"role": "user", "content": "Hi"}])
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("unexpected error", response.get_json()["error"])
+        self.assertNotIn(KEY, response.get_data(as_text=True))
+
+    def test_dropped_connection_is_a_readable_error(self):
+        def dropped(*args, **kwargs):
+            raise HTTPException("connection dropped")
+
+        with patch("solar_advisor.urlopen", dropped):
+            with self.assertRaises(AdvisorError) as raised:
+                post_json("https://api.deepseek.com/chat/completions", {}, KEY)
+        self.assertIn("Could not reach DeepSeek", str(raised.exception))
 
     def test_not_configured(self):
         client = self.client(False)

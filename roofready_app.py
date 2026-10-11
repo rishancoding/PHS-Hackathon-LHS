@@ -122,6 +122,19 @@ def create_app(output_root=None, project_store=None, advisor=None):
     def health():
         return jsonify(status="ok", app="PhotoGrid")
 
+    @app.errorhandler(404)
+    @app.errorhandler(500)
+    def api_error(exc):
+        # The page shows `error` from JSON; an HTML error page would hide the reason. Hosted
+        # restarts (free-plan sleep, redeploys) clear in-memory searches, which surface as 404s.
+        if not request.path.startswith("/api/"):
+            return exc
+        if exc.code == 404:
+            message = "This search is no longer on the server, usually because the site restarted. Run the search again."
+        else:
+            message = "The server hit an unexpected error. Try again, or run the search again."
+        return jsonify(error=message), exc.code
+
     @app.errorhandler(ProjectStorageError)
     def project_storage_error(exc):
         return jsonify(error=str(exc)), 503
