@@ -60,6 +60,21 @@ class HostingTests(unittest.TestCase):
         self.assertIn(b"PhotoGrid", page.data)
         self.assertNotIn(b"RoofReady", page.data)
 
+    @patch("roofready_app.DEFAULT_API_KEY", "")
+    def test_hosted_site_hides_key_box_when_server_has_a_google_key(self):
+        base = "https://photogrid-example.onrender.com"
+        hosted = self.make_app("photogrid-example.onrender.com").test_client()
+        with patch.dict(os.environ, {"GOOGLE_MAPS_API_KEY": "test-server-key"}):
+            page = hosted.get("/photogrid", base_url=base).get_data(as_text=True)
+            local = self.make_app().test_client().get("/photogrid").get_data(as_text=True)
+        self.assertIn('<details id="google-key" hidden>', page)
+        self.assertIn('id="api-key"', page)  # The scripts still read the (empty) input.
+        self.assertNotIn("test-server-key", page)
+        self.assertRegex(local, r'<details id="google-key"\s*>')  # Local override stays available.
+        with patch.dict(os.environ, {"GOOGLE_MAPS_API_KEY": ""}):
+            page = hosted.get("/photogrid", base_url=base).get_data(as_text=True)
+        self.assertIn('<details id="google-key" open>', page)
+
 
 if __name__ == "__main__":
     unittest.main()

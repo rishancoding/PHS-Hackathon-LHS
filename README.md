@@ -10,7 +10,8 @@ Enter a U.S. address, a search radius, a budget and how much electricity you nee
 
 The public website is not deployed yet. The included `render.yaml` names the
 service `photogrid`; Render assigns its final URL after you connect your account.
-The shared hosted demo starts without a Google key and supports the sample area.
+The hosted demo always supports the sample area; with a Google key set on Render,
+visitors can also search real addresses without entering a key.
 
 ## Quick start
 

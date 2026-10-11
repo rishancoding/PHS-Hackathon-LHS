@@ -20,15 +20,19 @@ health-check endpoint.
 
 ## Keys and saved searches
 
-Your local `.env` stays ignored and is not uploaded. The Blueprint leaves
-`GOOGLE_MAPS_API_KEY` empty. A visitor who wants a live search must supply a Google
-key in the existing input; it is used for that request and excluded from saved
-results and reports. Do not put your personal key into the shared public demo.
+Your local `.env` stays ignored and is not uploaded.
 
-When you first deploy the Blueprint, Render asks for **DEEPSEEK_API_KEY** (solar
-advisor) and **MONGODB_URI** (saved projects). `render.yaml` marks both
-`sync: false`, so their values stay in Render and never enter the Blueprint or Git;
-it sets `MONGODB_DATABASE=photogrid` for you. Render only asks during that first
+When you first deploy the Blueprint, Render asks for **GOOGLE_MAPS_API_KEY** (live
+address searches), **DEEPSEEK_API_KEY** (solar advisor) and **MONGODB_URI** (saved
+projects). `render.yaml` marks all three `sync: false`, so their values stay in
+Render and never enter the Blueprint or Git; it sets `MONGODB_DATABASE=photogrid`
+for you.
+
+With a Google key on Render, the site hides its key box and every visitor's search
+is billed to that key, so protect it in Google Cloud: restrict it to the Geocoding,
+Solar and Places (New) APIs, and set daily quotas and a budget alert. Without one,
+the site shows the box and a visitor's own key is used only for that request,
+never saved in results or reports. Render only asks during that first
 creation: for a Blueprint that already exists, add or change these keys on the
 `photogrid` service's **Environment** page.
 

@@ -25,8 +25,9 @@ setting that exposes Vercel system environment variables enabled.
 
 Google, DeepSeek and MongoDB credentials belong in Render's secret environment settings,
 not Vercel, GitHub, or this folder. Set `MONGODB_DATABASE=photogrid` on Render and
-allow its outbound IPs in Atlas. Leave the Google key unset for a sample-only
-public demo, or use the existing visitor key input.
+allow its outbound IPs in Atlas. Set the Google key on Render for live searches
+(visitors' searches are billed to it), or leave it unset for a sample-only demo
+where visitors can paste their own key.
 
 The gateway checks browser POST origins before forwarding them with the backend
 origin. It keeps the browser on the Vercel domain and needs no CORS changes.
